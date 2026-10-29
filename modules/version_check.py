@@ -55,15 +55,16 @@ logger = logging.getLogger(__name__)
 
 
 def _builtin_sources() -> tuple:
-    """从 PROJECT_REPO_URL 推导检查源：releases.atom（轻）与 GitHub API（带资产信息）。
+    """从 PROJECT_REPO_URL 推导检查源：GitHub API 与 releases.atom 直连 + gh-proxy 镜像回退。
     仓库未配置（还是占位符）时返回空元组，检查静默跳过。"""
     m = re.match(r'^https://github\.com/([^/]+)/([^/]+)/?$', PROJECT_REPO_URL.strip().rstrip('/'))
     if not m or m.group(1).lower() == 'placeholder':
         return ()
     owner, repo = m.group(1), m.group(2)
     return (
-        f"https://github.com/{owner}/{repo}/releases.atom",
         f"https://api.github.com/repos/{owner}/{repo}/releases?per_page=10",
+        f"https://github.com/{owner}/{repo}/releases.atom",
+        f"https://gh-proxy.com/https://github.com/{owner}/{repo}/releases.atom",
     )
 
 

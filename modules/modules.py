@@ -27,7 +27,7 @@ CURRENT_VERSION = "ProxyCat-V1.0.0"
 
 # 项目发布仓库：版本检查与一键自更新都从这里取 Release。
 # 发版流程见 scripts/release.py（打 tag → 推送 → 建 GitHub Release，源码包由 GitHub 自动生成）。
-PROJECT_REPO_URL = "https://github.com/PLACEHOLDER/ProxyCat"
+PROJECT_REPO_URL = "https://github.com/uf9n1x/ProxyCat"
 
 logger = logging.getLogger(__name__)
 

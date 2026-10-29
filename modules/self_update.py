@@ -99,8 +99,8 @@ def latest_release(force=False):
         resp.raise_for_status()
         payload = resp.json()
     except Exception as e:
-        logger.warning(f"查询最新 Release 失败: {e}")
-        return None
+        logger.warning(f"查询最新 Release 失败，尝试镜像回退: {e}")
+        return _latest_release_via_atom(owner, repo)
     tag = str(payload.get('tag_name') or '')
     info = {
         'tag': tag,
@@ -114,6 +114,43 @@ def latest_release(force=False):
         _release_cache['at'] = time.time()
         _release_cache['data'] = dict(info)
     return info
+
+
+def _latest_release_via_atom(owner, repo):
+    """API 不可达时的回退：经 gh-proxy 镜像取 releases.atom 解析最新 tag。
+    Atom 不带发布说明，正文链接按标准 releases/tag/<tag> 推断。"""
+    mirror = f'https://gh-proxy.com/https://github.com/{owner}/{repo}/releases.atom'
+    try:
+        resp = httpx.get(mirror, timeout=15.0, follow_redirects=True,
+                         headers={'User-Agent': 'ProxyCat-SelfUpdate'})
+        resp.raise_for_status()
+    except Exception as e:
+        logger.warning(f"镜像取 releases.atom 失败: {e}")
+        return None
+    import xml.etree.ElementTree as ET
+    try:
+        root = ET.fromstring(resp.text)
+    except ET.ParseError as e:
+        logger.warning(f"releases.atom 解析失败: {e}")
+        return None
+    ns = '{http://www.w3.org/2005/Atom}'
+    for entry in root.iter(f'{ns}entry'):
+        title = (entry.findtext(f'{ns}title') or '').strip()
+        link = ''
+        link_el = entry.find(f'{ns}link')
+        if link_el is not None:
+            link = link_el.get('href') or ''
+        if _parse_version(title):
+            tag = title
+            return {
+                'tag': tag,
+                'version': tag,
+                'html_url': link or f'https://github.com/{owner}/{repo}/releases/tag/{tag}',
+                'zipball_url': '',
+                'notes': '',
+                'published_at': entry.findtext(f'{ns}updated') or '',
+            }
+    return None
 
 
 def has_update(release=None):
@@ -184,13 +221,23 @@ def _restart():
     raise RuntimeError('restart failed: both systemd and detached relaunch unavailable')
 
 
-def _download_zipball(url, dest):
-    with httpx.stream('GET', url, headers=_headers(), timeout=DOWNLOAD_TIMEOUT_SECONDS,
-                      follow_redirects=True) as resp:
-        resp.raise_for_status()
-        with open(dest, 'wb') as fp:
-            for chunk in resp.iter_bytes(64 * 1024):
-                fp.write(chunk)
+def _download_zipball(urls, dest):
+    """按顺序尝试下载（直连 zipball → tag 归档直连 → gh-proxy 镜像），任一成功即返回。"""
+    last_err = None
+    for url in urls:
+        try:
+            with httpx.stream('GET', url, headers=_headers(), timeout=DOWNLOAD_TIMEOUT_SECONDS,
+                              follow_redirects=True) as resp:
+                resp.raise_for_status()
+                with open(dest, 'wb') as fp:
+                    for chunk in resp.iter_bytes(64 * 1024):
+                        fp.write(chunk)
+            if os.path.getsize(dest) > 0:
+                return
+        except Exception as e:
+            last_err = e
+            logger.warning(f"下载源不可用，尝试下一个: {url} ({e})")
+    raise RuntimeError(f'所有下载源均失败: {last_err}')
 
 
 def _apply_update():
@@ -208,7 +255,17 @@ def _apply_update():
         tmp = tempfile.NamedTemporaryFile(prefix='proxycat-update-', suffix='.zip', delete=False)
         tmp.close()
         try:
-            _download_zipball(release['zipball_url'], tmp.name)
+            owner, repo = _repo_parts()
+            tag = release.get('tag') or ''
+            urls = []
+            if release.get('zipball_url'):
+                urls.append(release['zipball_url'])
+            if tag:
+                urls.append(f'https://github.com/{owner}/{repo}/archive/refs/tags/{tag}.zip')
+                urls.append(f'https://gh-proxy.com/https://github.com/{owner}/{repo}/archive/refs/tags/{tag}.zip')
+            if not urls:
+                raise RuntimeError('Release 信息中没有可用的下载地址')
+            _download_zipball(urls, tmp.name)
             size_mb = os.path.getsize(tmp.name) / 1048576
 
             _set_state('extracting', f'下载完成（{size_mb:.1f} MB），正在覆盖文件 …')
