@@ -73,8 +73,8 @@ port can then read and write the configuration (including upstream credentials),
 and start or stop the service. Configure it this way only for local use; a token is mandatory if you
 expose the port to a network.
 
-> **The `config/config.ini` shipped in the repository has a non-empty token**, so using a fresh clone
-> as-is gets you a 401. See [Quick Deployment in the README](README-EN.md#quick-deployment).
+> **The token in the shipped `config.example.ini` is empty**: deployed as shipped, the panel does not
+> authenticate — set a token before exposing it. See [Quick Deployment in the README](README-EN.md#quick-deployment).
 
 **Only 4 API endpoints skip authentication** (`/` and `/static/<path>` also skip the token check, see
 [Appendix B](#appendix-b-endpoint-index)):
@@ -846,7 +846,7 @@ Accumulates success and failure counts per "target domain × upstream proxy". Th
 **GET**:
 
 ```json
-{ "status": "success", "users": { "demo": "demo123" } }
+{ "status": "success", "users": { "user": "pass" } }
 ```
 
 A failed read returns `status: "error"` with `users: null`, **not an empty object** — an empty object makes the UI show "no users at all", and the next time an administrator adds a user and saves, that empty table overwrites the original accounts, which amounts to turning outbound authentication off. **The response contains plaintext passwords.**
@@ -854,7 +854,7 @@ A failed read returns `status: "error"` with `users: null`, **not an empty objec
 **POST** replaces the whole `[Users]` section:
 
 ```json
-{ "users": { "demo": "demo123" } }
+{ "users": { "user": "pass" } }
 ```
 
 **An empty object turns outbound authentication off** (when the account table is empty, `auth_required` is `false`).

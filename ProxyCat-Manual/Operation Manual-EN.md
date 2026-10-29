@@ -7,7 +7,7 @@
 - Python **3.10 or later** is required (3.8 / 3.9 fail with an error at import time); the Docker image is based on Python 3.11.
 - The packaged builds under Releases are the more stable ones, though not necessarily the newest.
 - The API endpoint's response is parsed line by line: you may return several proxy addresses at once, a line without a protocol is completed as `http`, and lines with an invalid format are skipped. To attach one username / password to every fetched address, set `proxy_username` / `proxy_password` (both must be non-empty to take effect).
-- The `config/config.ini` shipped with the repository has been tuned by the author, so a few values differ from the program's built-in defaults. This manual does not repeat per-key documentation: what each key means, its default, how it takes effect and the authoritative reference are all in [Configuration](Configuration-EN.md).
+- The repository only ships the example configuration `config/config.example.ini` (tuned by the author, so a few values differ from the program's built-in defaults): on first deployment copy it to `config.ini` before editing. This manual does not repeat per-key documentation: what each key means, its default, how it takes effect and the authoritative reference are all in [Configuration](Configuration-EN.md).
 
 ## Installation and Deployment
 
@@ -31,14 +31,14 @@ pip install -r requirements.txt
 pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple/
 ```
 
-Open the `config` folder and find `config.ini`, then choose the proxy-serving method that matches the resources you have:
+Open the `config` folder, copy the example configuration `config.example.ini` to `config.ini`, then choose the proxy-serving method that matches the resources you have:
 
 (1) If your proxy server addresses are fixed connections that never need rotating, serve them from the local `ip.txt`, one `protocol://[user:password@]host:port` per line. The http / https / socks5 protocols and username / password authentication are all supported. The format looks like this:
 
 ```text
-socks5://demo:demo123@127.0.0.1:7890
-https://demo:demo123@127.0.0.1:7890
-http://demo:demo123@127.0.0.1:7890
+socks5://user:pass@127.0.0.1:7890
+https://user:pass@127.0.0.1:7890
+http://user:pass@127.0.0.1:7890
 socks5://127.0.0.1:7890
 https://127.0.0.1:7890
 http://127.0.0.1:7890
@@ -83,13 +83,11 @@ These four all show up as a symptom first and a cause second, so read them upfro
 
 **1. The panel won't open — it returns 401**
 
-The panel page itself is token-guarded, so with a token set you **must pass `?token=` to open it**. The `config/config.ini` shipped in this repo has a non-empty token, so visiting `http://127.0.0.1:5001/` directly ends in a 401 after the redirect. The correct URL is:
+The panel page itself is token-guarded, so with a token set you **must pass `?token=` to open it**. The token in the shipped example configuration is empty — deployed as shipped, the panel does not authenticate. **Set a token before exposing the panel**: the panel offers no field for it, so edit `[Server] token` in `config.ini` directly; the change hot-reloads within about a second and **the old token stops working right away**. From then on, open the panel with the new token appended:
 
 ```text
 http://127.0.0.1:5001/?token=<your-token>
 ```
-
-**That token is public in this repository — change it before exposing the panel**: the panel offers no field for it, so edit `[Server] token` in `config.ini` directly; the change hot-reloads within about a second and **the old token stops working right away**, so remember to reopen the panel with the new one.
 
 **2. The container is up, but it can't write configuration or logs**
 
@@ -231,9 +229,9 @@ Top to bottom, the screenshot shows: database statistics (Proxies / Valid / Inva
 
 ![Access Control tab](../assets/screenshots/access-en.png)
 
-The screenshot has three parts: **Users** at the top left lists the outbound authentication accounts (the two shipped in the repo, `k` and `demo`; passwords can be changed and accounts added or removed); to the right is **IP Access** with the **Whitelist** and **Blacklist**, the dropdown below choosing which one wins when a client matches both, and **Save** writing the lists to disk; below is the **Proxy Bypass Whitelist** — matching target addresses connect directly instead of going through an upstream proxy, and wildcards are supported.
+The screenshot has three parts: **Users** at the top left lists the outbound authentication accounts (the accounts in the screenshot were created by the person who deployed it; passwords can be changed and accounts added or removed); to the right is **IP Access** with the **Whitelist** and **Blacklist**, the dropdown below choosing which one wins when a client matches both, and **Save** writing the lists to disk; below is the **Proxy Bypass Whitelist** — matching target addresses connect directly instead of going through an upstream proxy, and wildcards are supported.
 
-- User management edits the `[Users]` section (one `account = password` per line): **when the account table is empty the proxy requires no authentication**. The program's built-in default has no `[Users]` section and requires no authentication; the `config.ini` shipped in the repo comes with factory accounts one example account: `demo = demo123`, so requests without credentials get a 407. Change accounts through the panel's user management; hand-editing the `[Users]` section of `config.ini` is also read in through the configuration hot reload (effective within about a second).
+- User management edits the `[Users]` section (one `account = password` per line): **when the account table is empty the proxy requires no authentication**. Neither the built-in defaults nor the shipped example configuration has any `[Users]` accounts — deployed as shipped, the proxy requires no authentication; add accounts from the panel before exposing it, after which requests without credentials get a 407. Hand-editing the `[Users]` section of `config.ini` is also read in through the configuration hot reload (effective within about a second).
 - The whitelist / blacklist files are always read from the `config/` directory; when a client matches both lists, `ip_auth_priority` (`whitelist` allows / `blacklist` blocks) decides.
 - For the three lists' file names and matching rules, see [Configuration](Configuration-EN.md).
 
@@ -368,11 +366,11 @@ A: Write fixed proxy addresses into `config/ip.txt` in the local list format sho
 
 Q: Why do I run into XXX errors? Why doesn't it work?
 
-A: Start with the [Investigation Manual](Investigation%20Manual-EN.md); if it cannot be fixed, you may ask the author — before asking, please pay ¥50 as a purchase fee for his time. If your question is something Baidu can answer or is covered in the manual, the fee is not refunded; if it turns out to be a tool bug or a feature suggestion, the fee is refunded in full and you will be added to this project's list of thanks. (Far too many people were asking very simple questions that were already answered in the help, wasting an enormous amount of time, and plenty of them had a very nasty attitude — this is not what I wanted.)
+A: Start with the [Investigation Manual](Investigation%20Manual-EN.md). If that does not solve it and you have confirmed a tool bug or have a feature suggestion, please open an Issue in this project's repository; questions already answered in the manual or the FAQ will not be answered one by one.
 
 Q: The panel won't open — it returns 401 after the redirect?
 
-A: The panel page itself is token-guarded, so with a token set you must open it with `?token=`. The token in the `config.ini` shipped in this repo is a public default — change it before exposing the panel (the panel has no token field; editing the file hot-reloads in about a second and the old token stops working right away). See [Four Things To Know Before Deploying](#four-things-to-know-before-deploying).
+A: The panel page itself is token-guarded, so with a token set you must open it with `?token=`. The token in the shipped example configuration is empty (the panel does not authenticate) — set one before exposing the panel (the panel has no token field; editing the file hot-reloads in about a second and the old token stops working right away). See [Four Things To Know Before Deploying](#four-things-to-know-before-deploying).
 
 Q: Do I need to restart after changing configuration?
 

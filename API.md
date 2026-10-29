@@ -70,7 +70,7 @@ token 在 `config/config.ini` 的 `[Server] token`。**校验只读查询串参�
 （包括上游凭据）、查看访问记录、启停服务。仅在本机使用时可这样配置；要暴露到网络上
 必须设置 token。
 
-> **仓库自带的 `config/config.ini` 里 token 非空**，克隆下来直接用会得到 401。
+> **出厂示例配置 `config.example.ini` 的 token 为空**：按示例部署时面板不校验，对外使用前请先设置。
 > 见 [README 的快速部署](README.md#快速部署)。
 
 **免鉴权的 API 端点只有 4 个**（`/` 与 `/static/<path>` 也不校验 token，见[附录 B](#附录-b端点总索引)）：
@@ -827,7 +827,7 @@ IP 的黑白名单校验。
 **GET**：
 
 ```json
-{ "status": "success", "users": { "demo": "demo123" } }
+{ "status": "success", "users": { "user": "pass" } }
 ```
 
 读失败时返回 `status: "error"` 与 `users: null`，**不是空对象**——空对象会让界面
@@ -837,7 +837,7 @@ IP 的黑白名单校验。
 **POST** 整份覆盖 `[Users]` 段：
 
 ```json
-{ "users": { "demo": "demo123" } }
+{ "users": { "user": "pass" } }
 ```
 
 **传空对象即可关闭出口认证**（账号表为空时 `auth_required` 为 `false`）。

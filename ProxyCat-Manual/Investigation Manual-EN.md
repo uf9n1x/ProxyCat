@@ -16,7 +16,7 @@ A: The listening port accepts both HTTP and SOCKS5 and forwards only connections
 
 Q: Why can't I find the problem I hit in this troubleshooting manual?
 
-A: This manual grows as problems come up — entries are added when they are encountered. You can contact the author (send ¥50 with your question; if no solution to the problem can be found via Baidu or GPT, it is refunded in full).
+A: This manual grows as problems come up — entries are added when they are encountered. If your problem is not covered here and you have confirmed a tool bug or a feature suggestion, please open an Issue in this project's repository.
 
 Q: An error message such as `- ERROR - XXXXXXXXXXX` appears
 

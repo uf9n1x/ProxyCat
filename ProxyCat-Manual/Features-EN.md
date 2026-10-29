@@ -464,7 +464,7 @@ Throughput on the forwarding path:
 
 ![Performance test](../assets/性能测试图.png)
 
-The screenshot is a Yakit load test through `http://demo:demo123@127.0.0.1:1080`: **3000 requests at
+The screenshot is a Yakit load test through `http://user:password@127.0.0.1:1080`: **3000 requests at
 500 concurrency, 3000 succeeded / 0 failed, all HTTP 200, roughly 550-670 ms per request**. The
 `user:password@host:port` form in that URL also demonstrates outbound authentication (the accounts
 in the `[Users]` section).

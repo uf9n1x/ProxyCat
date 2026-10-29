@@ -25,15 +25,15 @@ Some of these options directly determine which external addresses the program se
 
 > Note: the comments inside `config.ini` are in **Chinese**; only the panel's field descriptions are rendered per language.
 
-The **Default** column in this page's tables means the **built-in program default** (the value used when a key is missing or the whole `config.ini` is deleted). The `config.ini` shipped in the repo has been tuned by the author, and the following options differ from the built-in defaults:
+The **Default** column in this page's tables means the **built-in program default** (the value used when a key is missing or the whole `config.ini` is deleted). The `config.example.ini` shipped in the repo has been tuned by the author (copy it to `config.ini` on first deployment), and the following options differ from the built-in defaults:
 
-| Option | Built-in default | Shipped `config.ini` |
+| Option | Built-in default | Shipped `config.example.ini` |
 |---|---|---|
 | `proxy_source_mode` | `local` | `pool` |
 | `api_proxy_url` | `http://example.com/getip` | empty |
-| `mode` | `cycle` | `request` |
+| `mode` | `cycle` | `continuous` |
 | `interval` | `300` | `60` |
-| `exit_count` | `5` | `10` |
+| `exit_count` | `5` | `60` |
 | `exit_wait_timeout` | `15` | `30` |
 | `max_concurrent_requests` | `1000` | `3000` |
 | `check_concurrency` | `50` | `100` |
@@ -41,11 +41,13 @@ The **Default** column in this page's tables means the **built-in program defaul
 | `proxy_check_ttl` | `60` | `30` |
 | `check_cooldown` | `10` | `5` |
 | `access_records_real_ip_probe` | `false` | `true` |
-| `token` | empty (the panel does not authenticate) | `change-me`, must be changed before exposing it |
 
-> When started with the `config.ini` shipped in the repo, the source is `pool` and no `pool_remote_url` is configured, so **the built-in proxy pool starts together with the service automatically** — this is the normal behaviour of the shipped configuration, not a fault.
 
-The shipped values of the `[Pool]` section match the built-in defaults; both sides are the same configuration.
+> When started with the shipped `config.example.ini`, the source is `pool` and no `pool_remote_url` is configured, so **the built-in proxy pool starts together with the service automatically** — this is the normal behaviour of the shipped configuration, not a fault.
+>
+> The shipped configuration has an empty `token` and an empty `[Users]` section: the panel does not authenticate and the proxy requires no credentials. **Set a token and add proxy accounts before exposing anything.**
+
+The shipped values of the `[Pool]` section follow the inline comments in `config.example.ini`; a few tuning items differ from the built-in defaults.
 
 ## How Changes Take Effect
 
@@ -79,7 +81,7 @@ The panel's Proxy Config → Source group: the buttons at the top switch the pro
 
 | Option | Default | Description | Applies |
 |---|---|---|---|
-| `proxy_source_mode` | `local` | Proxy source: `local` reads `proxy_file`; `api` fetches `api_proxy_url`; `pool` uses the proxy pool. The shipped `config.ini` uses `pool` | Immediately |
+| `proxy_source_mode` | `local` | Proxy source: `local` reads `proxy_file`; `api` fetches `api_proxy_url`; `pool` uses the proxy pool. The shipped `config.example.ini` uses `pool` | Immediately |
 | `proxy_file` | `ip.txt` | File name of the proxy list for the `local` source; only the file name is used (any path part is ignored) and it is always read from the `config/` directory; saving the local proxy list from the panel writes back to this file | Immediately |
 | `api_proxy_url` | `http://example.com/getip` | Endpoint the `api` source fetches proxy addresses from. The response is parsed line by line: one proxy address per line, a line with no protocol is treated as http, and lines with an invalid format are skipped | Immediately |
 | `proxy_username` | empty | Authentication account appended to fetched proxy addresses; it takes effect only when `proxy_password` is non-empty as well, and it is not used to authenticate to the endpoint itself (`api_proxy_url`) | Immediately |
@@ -101,7 +103,7 @@ The panel's Proxy Config → Listening ports group, with an extra note: the acce
 | `token` | empty | Web panel access token, validated through `?token=`; empty means the panel does not authenticate. The panel has **no** field for this — changing it invalidates the current URL at once and locks you out of the panel, so to replace it, edit `config.ini` and save | Hot-reloads after the file is saved (about 1 second); the old token stops working right away |
 
 > **Risk of an empty `token`**: with it empty, anyone who can reach the panel port can read and write configuration, view access records and obtain the upstream credentials. The panel is meant to be used locally by default; if you expose it to a network, be sure to set a `token`.
-> Also, **the `config.ini` shipped in this repo carries a public default token** — change it before exposing the panel.
+> Also, **the token in the shipped example configuration is empty**: deployed as shipped, the panel does not authenticate — set a token before exposing it.
 
 ### Exit Rotation
 
@@ -116,7 +118,7 @@ The panel's Proxy Config → Exit rotation group: the run mode, the two lifetime
 | `mode` | `cycle` | **The same key asks two different questions depending on the source.** For the `local` source it asks *which one to pick*: `cycle` works down the list in order (ignoring load — the next entry is used only once the previous one is full); `loadbalance` picks whichever exit is under the least pressure. For the `api` / `pool` sources it asks *when to rotate*: `request` (On request) — it only fetches and swaps exits when a new task arrives, and with no tasks at all expired exits are removed outright and the pool drains, until the next request fetches a fresh set to fill it; `continuous` (Continuous) — regardless of traffic, the background proactively replaces expired exits and refills to the target. When the source is switched and the current value does not belong to the new group, it is normalised to that group's default (the first item in the list): the first item of the `api` / `pool` group is `request` (which likewise comes first in the panel's dropdown), and the first item of the `local` group is `cycle` | Immediately |
 | `interval` | `300` | Lifetime cap of each exit (seconds): once it has been in the roster that long it is replaced. Each exit times itself (that is, "its own arrival + `interval`", so a batch that entered together expires together), and **all** expired exits are replaced at once — not a single swap every so often. It applies to every source and all four run modes (the local source rotates by lifetime too, taking the next entry from the file; with no spare entry in the file, the exit restarts its lifetime in place). **When** the swap happens is decided by the run mode: `continuous` swaps in the background on its own, while `request` swaps only when a new task arrives and simply removes expired exits while idle. It and `request_interval` are **two independent rules that both apply**: set both and whichever comes first wins — it is not either/or. `0` disables time-based replacement | Immediately |
 | `request_interval` | `0` | Lifetime cap of each exit measured in assignments (replaced after being handed out this many times): again each exit counts its own. What is counted is "assignments" — a request that uses it counts once, and a retry that lands on a different exit counts once there. It and `interval` both apply, and whichever comes first wins. `0` disables request-count-based replacement | Immediately |
-| `exit_count` | `5` | The target capacity of the exit pool: this many upstream exits are kept in use — under `continuous` it **stays full even while there are no requests**; `request` (the shipped value) and the `local` source are request-driven instead: after about 10 idle seconds no more restocking happens, expired exits are removed rather than replaced and the pool may drain, and the next request fetches a fresh set to fill it (an empty pool or a gap left standing means the next request has to wait on the request path for one fetch plus validation). Fetched candidates are validated concurrently and fill the slots one by one until full; when an exit dies, only that one is replaced, not the whole batch. For `api` / `pool`, every fetch over-fetches by the shortfall, `min(shortfall × 8, 24)`; lines an `api` endpoint returns beyond that cap are truncated and discarded. `local` uses the file itself as the source, with this value as its cap (fewer entries means that is how many are used). Lowering it recalls the surplus on the spot (no waiting for lifetimes); each exit holds one client, so watch the connection and memory cost of a very large value. The shipped `config.ini` uses `10` | Immediately |
+| `exit_count` | `5` | The target capacity of the exit pool: this many upstream exits are kept in use — under `continuous` it **stays full even while there are no requests**; `request` and the `local` source are request-driven instead: after about 10 idle seconds no more restocking happens, expired exits are removed rather than replaced and the pool may drain, and the next request fetches a fresh set to fill it (an empty pool or a gap left standing means the next request has to wait on the request path for one fetch plus validation). Fetched candidates are validated concurrently and fill the slots one by one until full; when an exit dies, only that one is replaced, not the whole batch. For `api` / `pool`, every fetch over-fetches by the shortfall, `min(shortfall × 8, 24)`; lines an `api` endpoint returns beyond that cap are truncated and discarded. `local` uses the file itself as the source, with this value as its cap (fewer entries means that is how many are used). Lowering it recalls the surplus on the spot (no waiting for lifetimes); each exit holds one client, so watch the connection and memory cost of a very large value. The shipped `config.example.ini` uses `60` | Immediately |
 | `exit_wait_timeout` | `15` | How long a request queues (seconds) when there is no usable exit at all (a fresh start, a source switch, every exit disabled, a failed fetch); it is served as usual once an exit arrives, and only gets a `503` after the wait runs out. `0` means do not wait — return `503` on the spot | Immediately |
 
 ### Availability Checks
@@ -132,7 +134,7 @@ The panel's Proxy Config → Availability checks group: the check target, startu
 | `test_url` | `https://www.baidu.com` | Target URL for proxy liveness checks; the pool's `validator.target_url` is derived from it as well (Pool Settings has no such field — changing it here is changing the pool's validation target) | Immediately |
 | `check_proxies_on_startup` | `true` | Whether to check proxy availability once at startup. When the service starts with the `local` source (either entry point counts), a full check of the current roster also runs: unreachable entries are **removed one by one**, and the gaps are left to the refill. The "Check proxies" button on the panel checks the **source list** (every entry in `ip.txt`), not the current roster | Immediately |
 | `check_proxies_on_use` | `true` | Whether to validate a candidate (one real request) before it fills an exit slot; a failed one is discarded and the next is tried. **It is not a per-request check**: an exit that dies while serving is caught by failure retirement. Addresses from a source can expire within a minute — an open port does not mean the proxy still works | Immediately |
-| `check_concurrency` | `50` | Concurrency cap for batch proxy checks (1-1000). The shipped `config.ini` uses `100` | Immediately |
+| `check_concurrency` | `50` | Concurrency cap for batch proxy checks (1-1000). The shipped `config.example.ini` uses `100` | Immediately |
 
 ### Performance
 
@@ -144,7 +146,7 @@ The panel's Proxy Config → Performance group: global concurrency, per-exit con
 
 | Option | Default | Description | Applies |
 |---|---|---|---|
-| `max_concurrent_requests` | `1000` | Cap on requests handled simultaneously; beyond it requests queue on the semaphore. It is the global semaphore, applied alike to all three request kinds, and sized in **tunnels** rather than requests — when the sum of per-exit quotas far exceeds it, this is the value that actually applies. The shipped `config.ini` uses `3000` | Immediately |
+| `max_concurrent_requests` | `1000` | Cap on requests handled simultaneously; beyond it requests queue on the semaphore. It is the global semaphore, applied alike to all three request kinds, and sized in **tunnels** rather than requests — when the sum of per-exit quotas far exceeds it, this is the value that actually applies. The shipped `config.example.ini` uses `3000` | Immediately |
 | `max_concurrent_per_proxy` | `0` | Cap on active connections through a single upstream exit; `0` means unlimited. It counts connections "in use": a request counts while it is being forwarded, and a tunnel counts after establishment only while it is actually relaying data — idle tunnels do not consume quota (so it is an **admission control**, not a hard ceiling on the number of open upstream connections). Total upstream concurrency ≈ exits × this value (capped by the global limit). When your upstream rate-limits by exit IP, set it to what a single IP can bear (say 20); the excess queues instead of knocking the upstream over | Immediately |
 | `auto_expand_enabled` | `true` | Auto-expands the exit pool under load, with two trigger paths: (1) **immediate** — when the connections currently held on the listening port exceed "exits in use × per-exit quota", the exit count is doubled on the spot (capped at 2×) and filled in one go, without waiting for the watermark; (2) **fallback** — the background adds exits one step at a time based on "the share of exits pinned at their per-exit quota" (80% sustained for 1 second). Release looks at pool-wide utilisation (below half for 30 seconds); the thresholds and durations are fixed in code and not configurable. The per-exit quota is relaxed (at most doubled) only when this round did fetch from the source, got an answer, and still has no usable new candidate; the roster ceiling is `max(exit_count, min(exit_count × 2, max_concurrent_requests))`. After expansion stops, the surplus exits **serve out their own lifetimes** before being retired one by one. With `max_concurrent_per_proxy` at `0` (unlimited) nothing expands, but an expansion already open is still released as usual | Immediately |
 
@@ -161,7 +163,7 @@ The panel's Proxy Config → Logging and records group: the log level, the three
 | `log_level` | `INFO` | Log level: `DEBUG` / `INFO` / `WARNING` / `ERROR` / `CRITICAL`. Successful access lines are `INFO`, so setting the level to `WARNING` or above filters them out (the panel warns you in place) | Immediately |
 | `log_access_enabled` | `true` | Whether to write every proxied access to the access log (`logs/access.log`). Turning it off stops writing that file; domain statistics and access record details are both unaffected | Immediately |
 | `access_records_enabled` | `true` | Whether to record every proxy request individually (the access details on the panel's Logs page, stored in `logs/access_records.db`). It is a destination independent of the access log file and domain statistics, and the switches do not affect each other | Immediately |
-| `access_records_real_ip_probe` | `false` | When the exit address is a gateway, probe the real egress IP through it once (only for the `api` source; each address costs one extra unit of proxied traffic). The pool source uses the exit IP already verified in the pool, and local proxies are not probed. The shipped `config.ini` uses `true` | Immediately |
+| `access_records_real_ip_probe` | `false` | When the exit address is a gateway, probe the real egress IP through it once (only for the `api` source; each address costs one extra unit of proxied traffic). The pool source uses the exit IP already verified in the pool, and local proxies are not probed. The shipped `config.example.ini` uses `true` | Immediately |
 | `domain_stats_enabled` | `true` | Whether to accumulate access statistics per "domain × upstream proxy" (the access statistics on the panel's Logs page) | Immediately |
 | `access_records_retention_days` | `7` | Retention in days for access records; `0` means no time-based cleanup | Immediately |
 | `access_records_max_rows` | `200000` | Row cap for access records; rows beyond it are trimmed from the oldest; `0` means no limit | Immediately |
@@ -180,9 +182,9 @@ The panel's Proxy Config → Advanced group: the cooldowns, caching and internal
 
 | Option | Default | Description | Applies |
 |---|---|---|---|
-| `proxy_check_ttl` | `60` | Cache lifetime of proxy availability check results (seconds). The shipped `config.ini` uses `30` | Immediately |
-| `check_cooldown` | `10` | Cooldown between two availability checks (seconds). The shipped `config.ini` uses `5` | Immediately |
-| `switch_cooldown` | `2` | Cooldown after a batch refetch of exits (seconds); no refetch during the cooldown (refills are rate-limited by it too). It applies to all three sources alike. The shipped `config.ini` uses `1` | Immediately |
+| `proxy_check_ttl` | `60` | Cache lifetime of proxy availability check results (seconds). The shipped `config.example.ini` uses `30` | Immediately |
+| `check_cooldown` | `10` | Cooldown between two availability checks (seconds). The shipped `config.example.ini` uses `5` | Immediately |
+| `switch_cooldown` | `2` | Cooldown after a batch refetch of exits (seconds); no refetch during the cooldown (refills are rate-limited by it too). It applies to all three sources alike. The shipped `config.example.ini` uses `1` | Immediately |
 | `buffer_size` | `8192` | How many bytes of plaintext HTTP forwarding accumulate before backpressure is applied once (waiting for the client to drain the data); minimum 1024. It **does not control chunk size** — response bodies are forwarded in the upstream's native chunks (usually 64 KiB) with no re-chunking; the tunnel relay is fixed at 64 KiB and is unaffected by this option | Immediately |
 | `client_keepalive_expiry` | `30` | Idle recycling (seconds): a keep-alive connection expires after being idle this long, and the clients holding those connections are recycled on the same clock (it should not outlive its connections). Lowering it discards freshly warmed connections and degrades connection reuse | Immediately |
 | `tunnel_idle_timeout` | `10` | After a tunnel is established, how long "the client has sent data and the upstream has not returned a single byte" lasts before the upstream is declared dead (seconds); `0` disables the check. It is the **only way** to catch an upstream that accepts CONNECT and then sends nothing back, but an upstream that is merely very slow to queue can trip it too — if upstreams routinely take longer than this under high concurrency, raise it | Immediately |
@@ -210,7 +212,7 @@ The Basic authentication account table for the outbound proxy: the key is the us
 
 | Option | Default | Description | Applies |
 |---|---|---|---|
-| `username = password` (e.g. `demo = demo123`) | the built-in defaults have no `[Users]` section, so no authentication is required | Requests must carry Basic authentication; a request without it gets a `407`. The `config.ini` shipped in this repo has two accounts: one example account: `demo = demo123` | Applied immediately when saved from Access Control → User Management |
+| `username = password` | the built-in defaults have no `[Users]` section, so no authentication is required | Requests must carry Basic authentication; a request without it gets a `407`. The repo only ships `config.example.ini`, whose `[Users]` section is empty — deployed as shipped, the proxy requires no authentication; add accounts from the panel before exposing it | Applied immediately when saved from Access Control → User Management |
 
 Maintaining it through the panel's User Management is recommended — saving from the panel updates the running service directly; hand-editing this section is also read in through the configuration hot reload.
 
