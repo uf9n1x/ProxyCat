@@ -1,0 +1,37 @@
+# 本地环境与运行时产物
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.workbuddy/
+.scratch/
+
+# 运行时数据库与日志（由程序生成，不入库）
+logs/*.db
+logs/*.db-*
+logs/version_check.json
+modules/proxypool/data/*.db
+modules/proxypool/data/*.db-*
+modules/proxypool/data/backups/
+
+# 离线归属地库：约 100MB 二进制，不入版本库。
+# 文件保留在本地磁盘上，程序照常读取；换机部署时需单独拷贝该目录。
+modules/proxypool/data/geodb/
+
+# 运行期日志（内容由程序生成，入库只会变成噪声）
+logs/*.log
+logs/version_check.json
+modules/proxypool/logs/*.log
+
+# 运行期生成的目录占位
+!logs/.gitkeep
+
+# ── 含真实凭据 / 运行时状态的配置，永不入库 ─────────────────────────
+# 首次部署时从 config.example.ini 复制出 config.ini 再填值
+config/config.ini
+config/whitelist.txt
+config/blacklist.txt
+config/bypass_whitelist.txt
+# 代理池运行时的出口清单与本地代理地址
+config/proxies.txt
+config/ip.txt

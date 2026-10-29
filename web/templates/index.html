@@ -1,0 +1,1518 @@
+<!DOCTYPE html>
+<!--
+模块名称：控制面板页面骨架（index.html）
+功能描述：控制面板单页的全部静态 DOM 与资源入口：侧栏导航、服务与代理状态卡、配置 / 池 / 访问 /
+         日志四个视图容器、全部弹窗与浮层容器（含通知中心与任务坞），以及按序引入的样式表与八个脚本。
+职责边界：负责：静态结构、静态文案与资源引入顺序；只提供容器、id 与 data- 钩子，内容由脚本填充。
+         不负责：请求、渲染与交互状态（各 JS 脚本）、样式规则（main.css / pool.css）与版本注入（app.py）。
+关键依赖：app.py 注入的 app_version 与 asset_version；样式表顺序 font-awesome.min.css → main.css →
+         pool.css；脚本顺序 jquery.min.js → i18n.js → common.js → tables.js → app.js → pool.js →
+         proxies.js → palette.js，顺序即依赖，八个脚本共享同一全局作用域。
+已知限制：
+1. 八个脚本按序加载且共享同一全局作用域：不得调换顺序或改成 defer / async，函数重名会静默覆盖；内联 onclick 引用的函数必须存在于该作用域。
+2. 视图容器必须留在静态 DOM 里（隐藏而非懒加载，顶层脚本需取到 #proxy-table）；.tab-body 的 id 与 .show 类被脚本和 CSS 依赖，改名或换显隐方式即静默失效。
+3. data-i18n 的 key 必须中英两包都有，且不能挂在带子元素的标签上（setLang 用 .text() 写入会清空子节点）；状态文本节点不挂静态 data-i18n，由脚本写。
+4. #pool-start / #pool-stop 的禁用态由 pool.js 按运行状态设置，不要加 data-requires-pool，否则池停止后无法再启动。
+5. 主题初始化脚本须在样式表之前执行，判断应与 app.js 的 initTheme 一致；?v= 由 app.py 按 web/static 的文件修改时间生成，勿替换为产品版本号。
+6. 失效代理卡（#st-invalid）不得写死 bad 类：其红字由 pool.js 按 invalid > 0 动态切换，写死会在失效数为 0 时仍显示红字。
+-->
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ProxyCat</title>
+    <link rel="icon" href="/static/images/logo.png?v={{ asset_version }}">
+    <link href="/static/css/font-awesome.min.css?v={{ asset_version }}" rel="stylesheet">
+    <link href="/static/css/main.css?v={{ asset_version }}" rel="stylesheet">
+    <link href="/static/css/pool.css?v={{ asset_version }}" rel="stylesheet">
+    <link href="/static/css/theme.css?v={{ asset_version }}" rel="stylesheet">
+</head>
+<body>
+<div class="global-progress" id="global-progress"></div>
+<div class="app-shell">
+
+    <aside class="sidebar" id="sidebar">
+        <div class="sb-brand">
+            <span class="sb-title" data-i18n="title">ProxyCat 控制面板</span>
+            <span class="sb-meta">
+                <span class="hdr-ver" id="hdr-ver">{{ app_version }}</span>
+                <button class="hdr-ver-refresh" id="ver-refresh" type="button" data-i18n-title="version_check_now" title="立即检查更新">
+                    <i class="fa fa-refresh"></i>
+                </button>
+                <span class="hdr-ver-stat" id="ver-stat"></span>
+            </span>
+        </div>
+
+        <nav class="sb-nav" id="sb-nav">
+            <button class="sb-item" data-tab="tab-config">
+                <i class="fa fa-sliders sb-icon"></i><span data-i18n="config_tab">代理配置</span>
+            </button>
+            <button class="sb-item sb-parent" data-tab="tab-pool">
+                <i class="fa fa-database sb-icon"></i><span data-i18n="pool_tab">代理池</span>
+            </button>
+            <div class="sb-sub">
+                <button class="sb-item sb-child" data-view="pool-view-manage">
+                    <span data-i18n="pool_view_manage">代理管理</span>
+                </button>
+                <button class="sb-item sb-child" data-view="pool-view-settings">
+                    <span data-i18n="pool_config_tab">池设置</span>
+                </button>
+                <button class="sb-item sb-child" data-view="pool-view-db">
+                    <span data-i18n="db_maintain_title">数据库维护</span>
+                </button>
+            </div>
+            <button class="sb-item" data-tab="tab-access">
+                <i class="fa fa-shield sb-icon"></i><span data-i18n="access_control_tab">访问控制</span>
+            </button>
+            <button class="sb-item" data-tab="tab-logs">
+                <i class="fa fa-file-text sb-icon"></i><span data-i18n="logs_tab">运行日志</span>
+                <span class="sb-badge" id="sb-task-badge" style="display:none"></span>
+            </button>
+        </nav>
+
+        <!-- 运行概况：原来导航与底部状态之间是一条 500px 的空带，
+             把池子的关键数字放上来，既填满空间，也让任意页面都能一眼看到健康度 -->
+        <div class="sb-insight" id="sb-insight">
+            <div class="si-head">
+                <span class="si-title" data-i18n="sb_insight_title">运行概况</span>
+                <span class="si-rate" id="si-rate">--</span>
+            </div>
+            <div class="si-ring-wrap">
+                <div class="si-ring" id="si-ring">
+                    <div class="si-ring-hole">
+                        <span class="si-ring-val" id="si-ring-val">--</span>
+                        <span class="si-ring-lbl" data-i18n="sb_ring_label">可用率</span>
+                    </div>
+                </div>
+            </div>
+            <div class="si-rows">
+                <div class="si-row">
+                    <span class="si-dot ok"></span>
+                    <span class="si-key" data-i18n="sb_valid">有效代理</span>
+                    <b class="si-num" id="si-valid">--</b>
+                </div>
+                <div class="si-row">
+                    <span class="si-dot bad"></span>
+                    <span class="si-key" data-i18n="sb_invalid">失效代理</span>
+                    <b class="si-num" id="si-invalid">--</b>
+                </div>
+                <div class="si-row">
+                    <span class="si-dot accent"></span>
+                    <span class="si-key" data-i18n="sb_exits">在用出口</span>
+                    <b class="si-num" id="si-exits">--</b>
+                </div>
+            </div>
+        </div>
+
+        <div class="sb-foot">
+            <div class="sb-status">
+                <span class="dot" id="sb-svc-dot"></span>
+                <span class="sb-status-text" id="sb-svc-text">--</span>
+                <span class="sb-status-label" data-i18n="service_control_title">服务控制</span>
+            </div>
+            <div class="sb-status">
+                <span class="dot" id="sb-pool-dot"></span>
+                <span class="sb-status-text" id="sb-pool-text">--</span>
+                <span class="sb-status-label" data-i18n="pool_tab">代理池</span>
+            </div>
+            <div class="sb-tools">
+                <button class="sb-tool" onclick="toggleLang()" id="lang-btn">
+                    <i class="fa fa-globe"></i>
+                    <span class="cn-text">EN</span>
+                    <span class="en-text" style="display:none">中</span>
+                </button>
+            </div>
+        </div>
+    </aside>
+
+    <div class="sb-scrim" id="sb-scrim" onclick="toggleSidebar(false)"></div>
+
+    <main class="content">
+        <div class="mobile-topbar">
+            <button class="icon-btn mt-burger" onclick="toggleSidebar(true)" data-i18n-title="sb_open" title="打开导航">
+                <i class="fa fa-bars"></i>
+            </button>
+            <span class="mt-title" data-i18n="title">ProxyCat 控制面板</span>
+        </div>
+
+        <div class="content-inner">
+
+    <div class="conn-banner" id="conn-banner" role="alert">
+        <i class="fa fa-exclamation-triangle"></i>
+        <span id="conn-banner-text"></span>
+        <button class="btn sm" onclick="retryConnection()"><i class="fa fa-refresh"></i> <span data-i18n="conn_retry">重试</span></button>
+    </div>
+
+    <div class="status-bar">
+        <div class="panel control-strip">
+            <div class="cs-group">
+                <span class="dot" id="svc-dot"></span>
+                <span class="st-text" id="svc-text">运行中</span>
+                <span class="st-divider"></span>
+                <button class="btn ok sm" id="svc-start" onclick="controlService('start')"><i class="fa fa-play"></i> <span data-i18n="start_service">启动</span></button>
+                <button class="btn bad sm" id="svc-stop" onclick="controlService('stop')"><i class="fa fa-stop"></i> <span data-i18n="stop_service">停止</span></button>
+                <button class="btn sm" id="svc-restart" onclick="controlService('restart')"><i class="fa fa-refresh"></i> <span data-i18n="restart_service">重启</span></button>
+            </div>
+
+            <div class="cs-group cs-addrs">
+                <span class="addr" id="addr-http" onclick="copyAddr('http')" title="点击复制 HTTP 代理地址"><i class="fa fa-copy"></i><span id="http-addr">http://127.0.0.1:1080</span></span>
+                <span class="addr" id="addr-socks5" onclick="copyAddr('socks5')" title="点击复制 SOCKS5 代理地址"><i class="fa fa-copy"></i><span id="socks5-addr">socks5://127.0.0.1:1080</span></span>
+            </div>
+
+            <div class="cs-group cs-right">
+                <span class="tag" id="tag-source">--</span>
+                <span class="tag" id="tag-mode">--</span>
+                <span class="tag" id="tag-interval">--</span>
+                <span class="tag tag-click" id="tag-exits" style="display:none"
+                      onclick="toggleExitPop()" data-i18n-title="exit_pop_toggle"
+                      title="展开出口清单">--</span>
+                <span class="gauge"><span class="gauge-fill" id="gauge-bar" style="width:0%"></span></span>
+                <span class="timer" id="next-switch">--</span>
+                <button class="btn pri sm" id="switch-btn" onclick="switchProxy()"><i class="fa fa-refresh"></i> <span data-i18n="manual_switch_btn">刷新出口</span></button>
+                <div class="exit-pop" id="exit-pop">
+                    <div class="exit-list" id="exit-list" style="display:none">
+                        <div class="exit-row exit-head">
+                            <span class="exit-url" data-i18n="exit_col_url">出口</span>
+                            <span class="exit-load" data-i18n="exit_col_load">在用/上限</span>
+                            <span class="exit-left" data-i18n="exit_col_left">剩余</span>
+                        </div>
+                        <div id="exit-rows"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="tip-warn" id="tip-zero" style="display:none"><i class="fa fa-info-circle"></i> <span data-i18n="pool_interval_zero_notice">间隔为 0 表示不按时间重取出口：当前这批用完或被停用后才补货</span></div>
+            <div class="tip-warn" id="tip-source-error" style="display:none"><i class="fa fa-exclamation-triangle"></i> <span id="tip-source-error-text"></span></div>
+        </div>
+    </div>
+
+    <header class="view-head">
+        <h2 class="view-title" id="view-title"></h2>
+        <span class="view-sub" id="view-sub"></span>
+    </header>
+
+    <div class="view-wrap">
+        <div class="tab-body show" id="tab-config">
+
+            <div class="source-mode-group" id="source-mode-group">
+                <button class="source-mode-btn active" data-mode="local" onclick="setSourceMode('local')"><i class="fa fa-folder-open"></i> <span data-i18n="proxy_source_mode_local">本地代理</span></button>
+                <button class="source-mode-btn" data-mode="api" onclick="setSourceMode('api')"><i class="fa fa-cloud"></i> <span data-i18n="proxy_source_mode_api">API代理</span></button>
+                <button class="source-mode-btn" data-mode="pool" onclick="setSourceMode('pool')"><i class="fa fa-database"></i> <span data-i18n="proxy_source_mode_pool">维护池代理</span></button>
+            </div>
+            <input type="hidden" name="proxy_source_mode" id="proxy-source-mode" value="local">
+
+                        <div class="settings-layout">
+                <div class="settings-nav" id="config-nav">
+                    <div class="settings-nav-item cur" data-group="source">
+                        <i class="fa fa-plug"></i><span data-i18n="cfg_group_source"></span>
+                    </div>
+                    <div class="settings-nav-item" data-group="listen">
+                        <i class="fa fa-server"></i><span data-i18n="cfg_group_listen"></span>
+                    </div>
+                    <div class="settings-nav-item" data-group="exits">
+                        <i class="fa fa-random"></i><span data-i18n="cfg_group_exits"></span>
+                    </div>
+                    <div class="settings-nav-item" data-group="check">
+                        <i class="fa fa-check-circle-o"></i><span data-i18n="cfg_group_check"></span>
+                    </div>
+                    <div class="settings-nav-item" data-group="perf">
+                        <i class="fa fa-tachometer"></i><span data-i18n="cfg_group_perf"></span>
+                    </div>
+                    <div class="settings-nav-item" data-group="logs">
+                        <i class="fa fa-file-text-o"></i><span data-i18n="cfg_group_logs"></span>
+                    </div>
+                    <div class="settings-nav-item" data-group="advanced">
+                        <i class="fa fa-cog"></i><span data-i18n="advanced_config_title"></span>
+                    </div>
+                </div>
+
+                <div class="settings-main">
+
+                    <div class="settings-group show" data-group="source">
+                        <div class="settings-card">
+                            <div class="settings-card-hd"><i class="fa fa-plug"></i><span data-i18n="cfg_group_source"></span><span class="settings-card-sub" data-i18n="cfg_group_source_sub"></span></div>
+                            <div class="settings-body">
+
+                                    <div class="fg" data-visible-when="proxy_source_mode=local">
+                                    <div class="fg-label-row">
+                                    <label class="fg-label" data-i18n="local_proxy_file_label">本地代理文件</label>
+                                    <i class="fa fa-info-circle fg-tip" data-i18n-title="local_proxy_file_doc" aria-hidden="true"></i>
+                                    </div>
+                                    <input class="fg-input" name="proxy_file" value="ip.txt">
+                                    <div class="fg-hint" data-i18n="local_proxy_file_hint">只填文件名，固定从 config/ 目录读取</div>
+                                    </div>
+
+                                    <div class="fg" data-visible-when="proxy_source_mode=local">
+                                    <div class="fg-label-row">
+                                    <span class="fg-label" data-i18n="local_proxy_list_label">本地代理列表</span>
+                                    <i class="fa fa-info-circle fg-tip" data-i18n-title="local_proxy_list_doc" aria-hidden="true"></i>
+                                    </div>
+                                    <div class="proxy-grid settings-full">
+                                    <div class="proxy-cell">
+                                    <span class="proxy-tag http">HTTP</span>
+                                    <textarea id="http-proxy-list" rows="5" placeholder="ip:port"></textarea>
+                                    </div>
+                                    <div class="proxy-cell">
+                                    <span class="proxy-tag https">HTTPS</span>
+                                    <textarea id="https-proxy-list" rows="5" placeholder="ip:port"></textarea>
+                                    </div>
+                                    <div class="proxy-cell">
+                                    <span class="proxy-tag socks5">SOCKS5</span>
+                                    <textarea id="socks5-proxy-list" rows="5" placeholder="ip:port"></textarea>
+                                    </div>
+                                    <div class="proxy-cell">
+                                    <span class="proxy-tag full">FULL</span>
+                                    <textarea id="full-proxy-list" rows="5" placeholder="protocol://[user:pass@]ip:port"></textarea>
+                                    </div>
+                                    </div>
+                                    <div class="proxy-actions settings-full">
+                                    <button class="btn pri" id="btn-save-proxy" onclick="saveProxies()"><i class="fa fa-save"></i> <span data-i18n="save_proxy_btn">保存代理</span></button>
+                                    <button class="btn" id="btn-check-proxy" onclick="checkProxies()"><i class="fa fa-check-circle"></i> <span data-i18n="check_proxy_btn">检测代理</span></button>
+                                    </div>
+                                    </div>
+
+                                    <div class="fg" data-visible-when="proxy_source_mode=api">
+                                    <div class="fg-label-row">
+                                    <label class="fg-label" data-i18n="api_proxy_url_label">API 取代理地址</label>
+                                    <i class="fa fa-info-circle fg-tip" data-i18n-title="api_proxy_url_doc" aria-hidden="true"></i>
+                                    </div>
+                                    <input class="fg-input" name="api_proxy_url">
+                                    <div class="fg-hint" data-i18n="api_proxy_url_hint">接口返回代理列表，可带账号密码</div>
+                                    </div>
+
+                                    <div class="fg" data-visible-when="proxy_source_mode=api">
+                                    <div class="fg-label-row">
+                                    <label class="fg-label" for="proxy-auth" data-i18n="proxy_auth_label">代理认证</label>
+                                    <i class="fa fa-info-circle fg-tip" data-i18n-title="proxy_auth_doc" aria-hidden="true"></i>
+                                    </div>
+                                    <input class="fg-input" id="proxy-auth" autocomplete="off" data-i18n-placeholder="proxy_auth_ph" placeholder="用户名:密码，留空表示不认证">
+                                    <div class="fg-hint" data-i18n="proxy_auth_hint">按第一个冒号拆分：前面是用户名，后面（可以再带冒号）是密码</div>
+                                    <div class="fg-hint warn-hint" id="proxy-auth-warn" style="display:none" data-i18n="proxy_auth_warn">没有冒号，这样不会启用认证；请写成「用户名:密码」</div>
+                                    </div>
+
+                                    <div class="fg" data-visible-when="proxy_source_mode=api">
+                                    <div class="fg-label-row">
+                                    <span class="fg-label" data-i18n="api_saved_credentials">已保存的凭据</span>
+                                    </div>
+                                    <div class="cred-row">
+                                    <select class="fg-select" id="api-credential-select" onchange="onCredentialSelect()">
+                                    <option value="" data-i18n="api_credential_none">-- 选择凭据 --</option>
+                                    </select>
+                                    <button class="btn sm" onclick="saveApiCredential()"><i class="fa fa-plus"></i> <span data-i18n="api_save_credential">保存当前</span></button>
+                                    <button class="btn sm ghost bad" id="btn-delete-credential" onclick="deleteApiCredential()" disabled><i class="fa fa-trash-o"></i> <span data-i18n="api_delete_credential">删除</span></button>
+                                    </div>
+                                    </div>
+
+                                    <div class="fg" data-visible-when="proxy_source_mode=pool">
+                                    <div class="fg-label-row">
+                                    <label class="fg-label" data-i18n="pool_remote_url_label">远程代理池地址</label>
+                                    <i class="fa fa-info-circle fg-tip" data-i18n-title="pool_remote_url_doc" aria-hidden="true"></i>
+                                    </div>
+                                    <input class="fg-input" name="pool_remote_url" data-i18n-placeholder="pool_remote_url_ph" placeholder="留空则使用内置代理池">
+                                    <div class="fg-hint" data-i18n="pool_remote_url_hint">留空表示使用 ProxyCat 内置的代理池；填写地址则接入外部代理池的取用接口</div>
+                                    </div>
+
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="settings-group" data-group="listen">
+                        <div class="settings-card">
+                            <div class="settings-card-hd"><i class="fa fa-server"></i><span data-i18n="cfg_group_listen"></span><span class="settings-card-sub" data-i18n="cfg_group_listen_sub"></span></div>
+                            <div class="settings-body">
+
+                                    <div class="fg">
+                                    <div class="fg-label-row">
+                                    <label class="fg-label" data-i18n="port_label">代理监听端口</label>
+                                    <i class="fa fa-info-circle fg-tip" data-i18n-title="port_doc" aria-hidden="true"></i>
+                                    </div>
+                                    <input class="fg-input" type="number" name="port" min="1" max="65535">
+                                    <div class="fg-hint" data-i18n="port_hint">HTTP 与 SOCKS5 共用；保存后会重启服务</div>
+                                    </div>
+
+                                    <div class="fg">
+                                    <div class="fg-label-row">
+                                    <label class="fg-label" data-i18n="web_port_label">Web 面板端口</label>
+                                    <i class="fa fa-info-circle fg-tip" data-i18n-title="web_port_doc" aria-hidden="true"></i>
+                                    </div>
+                                    <input class="fg-input" type="number" name="web_port" min="1" max="65535">
+                                    <div class="fg-hint" data-i18n="web_port_hint">保存后需重启整个应用，不是只重启代理服务</div>
+                                    </div>
+
+                                    <div class="settings-note" data-i18n="token_in_file_hint">访问令牌不在面板里修改：改了会让当前地址立刻失效、把你锁在面板外。需要更换时请编辑 config/config.ini 的 [Server] token 后重启。</div>
+
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="settings-group" data-group="exits">
+                        <div class="settings-card">
+                            <div class="settings-card-hd"><i class="fa fa-random"></i><span data-i18n="cfg_group_exits"></span><span class="settings-card-sub" data-i18n="cfg_group_exits_sub"></span></div>
+                            <div class="settings-body">
+
+                                    <div class="fg">
+                                    <div class="fg-label-row">
+                                    <label class="fg-label" id="mode-label" data-i18n="run_mode_label">运行模式</label>
+                                    <i class="fa fa-info-circle fg-tip" id="mode-tip" data-i18n-title="run_mode_doc" aria-hidden="true"></i>
+                                    </div>
+                                    <select class="fg-select" name="mode" id="mode-select">
+                                    <option value="cycle" data-i18n="cycle_mode">按顺序使用</option>
+                                    <option value="loadbalance" data-i18n="loadbalance_mode">负载均衡</option>
+                                    </select>
+                                    <div class="fg-hint" id="mode-hint" data-i18n="run_mode_hint">按顺序使用＝按清单顺序轮着来；负载均衡＝谁压力小先用谁</div>
+                                    <div class="fg-hint warn-hint" data-visible-when="mode!=continuous" data-i18n="mode_idle_drain_note">没有请求时，到期的出口会被移除、池子会空掉；下一个请求到达时才重新取货填满</div>
+                                    </div>
+
+                                    <div class="fg">
+                                    <div class="fg-label-row">
+                                    <label class="fg-label" data-i18n="switch_interval_label">出口寿命·按时间</label>
+                                    <i class="fa fa-info-circle fg-tip" data-i18n-title="switch_interval_doc" aria-hidden="true"></i>
+                                    </div>
+                                    <div class="fg-control">
+                                    <input class="fg-input" type="number" name="interval" min="0" oninput="onIntervalChange()">
+                                    <span class="fg-unit" data-i18n="unit_sec"></span>
+                                    </div>
+                                    <div class="fg-hint" data-i18n="switch_interval_hint">到点就换掉；与按请求数各算各的，谁先到换谁</div>
+                                    </div>
+
+                                    <div class="fg">
+                                    <div class="fg-label-row">
+                                    <label class="fg-label" data-i18n="request_interval_label">出口寿命·按次数</label>
+                                    <i class="fa fa-info-circle fg-tip" data-i18n-title="request_interval_doc" aria-hidden="true"></i>
+                                    </div>
+                                    <div class="fg-control">
+                                    <input class="fg-input" type="number" name="request_interval" value="0" min="0" oninput="onIntervalChange()">
+                                    <span class="fg-unit" data-i18n="unit_times"></span>
+                                    </div>
+                                    <div class="fg-hint" data-i18n="request_interval_hint">服务满这么多次就换掉；与按时间各算各的，谁先到换谁</div>
+                                    </div>
+
+                                    <div class="fg">
+                                    <div class="fg-label-row">
+                                    <label class="fg-label" data-i18n="exit_count_label">在用出口数</label>
+                                    <i class="fa fa-info-circle fg-tip" data-i18n-title="exit_count_doc" aria-hidden="true"></i>
+                                    </div>
+                                    <div class="fg-control">
+                                    <input class="fg-input" type="number" name="exit_count" min="1" max="1000">
+                                    <span class="fg-unit" data-i18n="unit_items"></span>
+                                    </div>
+                                    <div class="fg-hint" data-i18n="exit_count_hint">池里一直维持这么多个，没有请求时也保持；调小会当场收回多余的</div>
+                                    </div>
+
+                                    <div class="fg">
+                                    <div class="fg-label-row">
+                                    <label class="fg-label" data-i18n="exit_wait_label">无可用出口时排队</label>
+                                    <i class="fa fa-info-circle fg-tip" data-i18n-title="exit_wait_doc" aria-hidden="true"></i>
+                                    </div>
+                                    <div class="fg-control">
+                                    <input class="fg-input" type="number" name="exit_wait_timeout" min="0" max="600">
+                                    <span class="fg-unit" data-i18n="unit_sec"></span>
+                                    </div>
+                                    <div class="fg-hint" data-i18n="exit_wait_hint">等不到就回 503；0 表示不等</div>
+                                    </div>
+
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="settings-group" data-group="check">
+                        <div class="settings-card">
+                            <div class="settings-card-hd"><i class="fa fa-check-circle-o"></i><span data-i18n="cfg_group_check"></span><span class="settings-card-sub" data-i18n="cfg_group_check_sub"></span></div>
+                            <div class="settings-body">
+
+                                    <div class="fg">
+                                    <div class="fg-label-row">
+                                    <label class="fg-label" data-i18n="test_target_label">测试目标地址</label>
+                                    <i class="fa fa-info-circle fg-tip" data-i18n-title="test_target_doc" aria-hidden="true"></i>
+                                    </div>
+                                    <input class="fg-input" name="test_url" placeholder="https://www.baidu.com">
+                                    <div class="fg-hint" data-i18n="test_target_hint">检测出口存活时请求的地址</div>
+                                    </div>
+
+                                    <div class="fg" data-visible-when="proxy_source_mode=local">
+                                    <div class="fg-label-row">
+                                    <label class="fg-label" for="check-proxies-on-startup" data-i18n="startup_check_label">启动时检测全部代理</label>
+                                    <i class="fa fa-info-circle fg-tip" data-i18n-title="startup_check_doc" aria-hidden="true"></i>
+                                    </div>
+                                    <div class="fg-check"><input type="checkbox" name="check_proxies_on_startup" id="check-proxies-on-startup"></div>
+                                    <div class="fg-hint" data-i18n="startup_check_hint">启动后先跑一遍可用性检测</div>
+                                    </div>
+
+                                    <div class="fg">
+                                    <div class="fg-label-row">
+                                    <label class="fg-label" for="check-proxies-on-use" data-i18n="use_check_label">取用前先校验</label>
+                                    <i class="fa fa-info-circle fg-tip" data-i18n-title="use_check_doc" aria-hidden="true"></i>
+                                    </div>
+                                    <div class="fg-check"><input type="checkbox" name="check_proxies_on_use" id="check-proxies-on-use"></div>
+                                    <div class="fg-hint" data-i18n="use_check_hint">不合格的丢掉换下一条</div>
+                                    </div>
+
+                                    <div class="fg">
+                                    <div class="fg-label-row">
+                                    <label class="fg-label" data-i18n="check_concurrency_label">批量检测并发数</label>
+                                    <i class="fa fa-info-circle fg-tip" data-i18n-title="check_concurrency_doc" aria-hidden="true"></i>
+                                    </div>
+                                    <div class="fg-control">
+                                    <input class="fg-input" type="number" name="check_concurrency" min="1" max="1000">
+                                    <span class="fg-unit" data-i18n="unit_items"></span>
+                                    </div>
+                                    <div class="fg-hint" data-i18n="check_concurrency_hint">同时验证多少个代理</div>
+                                    </div>
+
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="settings-group" data-group="perf">
+                        <div class="settings-card">
+                            <div class="settings-card-hd"><i class="fa fa-tachometer"></i><span data-i18n="cfg_group_perf"></span><span class="settings-card-sub" data-i18n="cfg_group_perf_sub"></span></div>
+                            <div class="settings-body">
+
+                                    <div class="fg">
+                                    <div class="fg-label-row">
+                                    <label class="fg-label" data-i18n="max_concurrent_requests_label">全局并发上限</label>
+                                    <i class="fa fa-info-circle fg-tip" data-i18n-title="max_concurrent_requests_doc" aria-hidden="true"></i>
+                                    </div>
+                                    <div class="fg-control">
+                                    <input class="fg-input" type="number" name="max_concurrent_requests" min="1">
+                                    <span class="fg-unit" data-i18n="unit_items"></span>
+                                    </div>
+                                    <div class="fg-hint" data-i18n="max_concurrent_requests_hint">超出后排队等待</div>
+                                    </div>
+
+                                    <div class="fg">
+                                    <div class="fg-label-row">
+                                    <label class="fg-label" data-i18n="per_proxy_concurrency_label">单出口并发上限</label>
+                                    <i class="fa fa-info-circle fg-tip" data-i18n-title="per_proxy_concurrency_doc" aria-hidden="true"></i>
+                                    </div>
+                                    <div class="fg-control">
+                                    <input class="fg-input" type="number" name="max_concurrent_per_proxy" min="0" max="10000">
+                                    <span class="fg-unit" data-i18n="unit_items"></span>
+                                    </div>
+                                    <div class="fg-hint" data-i18n="per_proxy_concurrency_hint">0 表示不限；总并发 ≈ 出口数 × 本值</div>
+                                    </div>
+
+                                    <div class="fg" data-visible-when="max_concurrent_per_proxy!=0">
+                                    <div class="fg-label-row">
+                                    <label class="fg-label" for="auto-expand-enabled" data-i18n="auto_expand_enabled_label">高峰期自动扩容</label>
+                                    <i class="fa fa-info-circle fg-tip" data-i18n-title="auto_expand_enabled_doc" aria-hidden="true"></i>
+                                    </div>
+                                    <div class="fg-check"><input type="checkbox" name="auto_expand_enabled" id="auto-expand-enabled"></div>
+                                    <div class="fg-hint" data-i18n="auto_expand_enabled_hint">并发顶到容量就立刻翻倍到上限，不必等水位</div>
+                                    </div>
+
+                                    <div class="settings-note" data-i18n="auto_expand_note">扩容只在「单出口并发上限」不为 0 时有意义：填 0 时不扩，但已经张开的膨胀状态照常收回</div>
+
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="settings-group" data-group="logs">
+                        <div class="settings-card">
+                            <div class="settings-card-hd"><i class="fa fa-file-text-o"></i><span data-i18n="cfg_group_logs"></span><span class="settings-card-sub" data-i18n="cfg_group_logs_sub"></span></div>
+                            <div class="settings-body">
+
+                                    <div class="fg">
+                                    <div class="fg-label-row">
+                                    <label class="fg-label" data-i18n="log_level_label">日志级别</label>
+                                    <i class="fa fa-info-circle fg-tip" data-i18n-title="log_level_doc" aria-hidden="true"></i>
+                                    </div>
+                                    <select class="fg-select" name="log_level">
+                                    <option value="DEBUG">DEBUG</option>
+                                    <option value="INFO">INFO</option>
+                                    <option value="WARNING">WARNING</option>
+                                    <option value="ERROR">ERROR</option>
+                                    <option value="CRITICAL">CRITICAL</option>
+                                    </select>
+                                    <div class="fg-hint" data-i18n="log_level_hint">低于此级别的记录不写入</div>
+                                    </div>
+
+                                    <div class="settings-note warn-hint" id="log-level-warning" style="display:none" data-i18n="log_level_hides_access_warning">当前级别会把访问成功记录（INFO）一并过滤掉，访问日志里将只剩失败与错误。要保留成功记录请把级别调回 INFO。</div>
+
+                                    <div class="fg">
+                                    <div class="fg-label-row">
+                                    <label class="fg-label" for="log-access-enabled" data-i18n="log_access_enabled_label">写访问日志文件</label>
+                                    <i class="fa fa-info-circle fg-tip" data-i18n-title="log_access_enabled_doc" aria-hidden="true"></i>
+                                    </div>
+                                    <div class="fg-check"><input type="checkbox" name="log_access_enabled" id="log-access-enabled"></div>
+                                    <div class="fg-hint" data-i18n="log_access_enabled_hint">只影响 logs/access.log</div>
+                                    </div>
+
+                                    <div class="fg">
+                                    <div class="fg-label-row">
+                                    <label class="fg-label" for="access-records-enabled" data-i18n="records_enabled_label">保存访问记录明细</label>
+                                    <i class="fa fa-info-circle fg-tip" data-i18n-title="records_enabled_doc" aria-hidden="true"></i>
+                                    </div>
+                                    <div class="fg-check"><input type="checkbox" name="access_records_enabled" id="access-records-enabled"></div>
+                                    <div class="fg-hint" data-i18n="records_enabled_hint">在「运行日志 → 访问」里按时间查看与导出</div>
+                                    </div>
+
+                                    <div class="fg" data-visible-when="proxy_source_mode=api;access_records_enabled=true">
+                                    <div class="fg-label-row">
+                                    <label class="fg-label" for="access-records-real-ip-probe" data-i18n="records_real_ip_probe_label">探测出口真实 IP</label>
+                                    <i class="fa fa-info-circle fg-tip" data-i18n-title="records_real_ip_probe_doc" aria-hidden="true"></i>
+                                    </div>
+                                    <div class="fg-check"><input type="checkbox" name="access_records_real_ip_probe" id="access-records-real-ip-probe"></div>
+                                    <div class="fg-hint" data-i18n="records_real_ip_probe_hint">仅 API 来源；网关型出口多消耗一次代理流量</div>
+                                    </div>
+
+                                    <div class="fg">
+                                    <div class="fg-label-row">
+                                    <label class="fg-label" for="domain-stats-enabled" data-i18n="domain_stats_enabled_label">保存域名访问统计</label>
+                                    <i class="fa fa-info-circle fg-tip" data-i18n-title="domain_stats_enabled_doc" aria-hidden="true"></i>
+                                    </div>
+                                    <div class="fg-check"><input type="checkbox" name="domain_stats_enabled" id="domain-stats-enabled"></div>
+                                    <div class="fg-hint" data-i18n="domain_stats_enabled_hint">按「域名 × 出口」汇总，保留时间比明细长</div>
+                                    </div>
+
+                                    <div class="fg" data-visible-when="access_records_enabled=true">
+                                    <div class="fg-label-row">
+                                    <label class="fg-label" data-i18n="records_retention_label">访问记录保留</label>
+                                    <i class="fa fa-info-circle fg-tip" data-i18n-title="records_retention_doc" aria-hidden="true"></i>
+                                    </div>
+                                    <div class="fg-control">
+                                    <input class="fg-input" type="number" name="access_records_retention_days" min="0">
+                                    <span class="fg-unit" data-i18n="unit_days"></span>
+                                    </div>
+                                    <div class="fg-hint" data-i18n="records_retention_hint">0 表示不按天数清理</div>
+                                    </div>
+
+                                    <div class="fg" data-visible-when="access_records_enabled=true">
+                                    <div class="fg-label-row">
+                                    <label class="fg-label" data-i18n="records_max_rows_label">访问记录上限</label>
+                                    <i class="fa fa-info-circle fg-tip" data-i18n-title="records_max_rows_doc" aria-hidden="true"></i>
+                                    </div>
+                                    <div class="fg-control">
+                                    <input class="fg-input" type="number" name="access_records_max_rows" min="0">
+                                    <span class="fg-unit" data-i18n="unit_rows"></span>
+                                    </div>
+                                    <div class="fg-hint" data-i18n="records_max_rows_hint">超出后自动删除最老的记录</div>
+                                    </div>
+
+                                    <div class="fg" data-visible-when="access_records_enabled=true">
+                                    <div class="fg-label-row">
+                                    <label class="fg-label" data-i18n="records_flush_label">访问记录写入间隔</label>
+                                    <i class="fa fa-info-circle fg-tip" data-i18n-title="records_flush_doc" aria-hidden="true"></i>
+                                    </div>
+                                    <div class="fg-control">
+                                    <input class="fg-input" type="number" name="access_records_flush_interval" min="1">
+                                    <span class="fg-unit" data-i18n="unit_sec"></span>
+                                    </div>
+                                    <div class="fg-hint" data-i18n="records_flush_hint">内存里的明细每隔这么久写一次库</div>
+                                    </div>
+
+                                    <div class="fg" data-visible-when="access_records_enabled=true">
+                                    <div class="fg-label-row">
+                                    <label class="fg-label" data-i18n="records_buffer_label">访问记录内存缓冲</label>
+                                    <i class="fa fa-info-circle fg-tip" data-i18n-title="records_buffer_doc" aria-hidden="true"></i>
+                                    </div>
+                                    <div class="fg-control">
+                                    <input class="fg-input" type="number" name="access_records_buffer_size" min="100">
+                                    <span class="fg-unit" data-i18n="unit_rows"></span>
+                                    </div>
+                                    <div class="fg-hint" data-i18n="records_buffer_hint">最多缓存多少条待写库；改动需重启生效</div>
+                                    </div>
+
+                                    <div class="fg" data-visible-when="domain_stats_enabled=true">
+                                    <div class="fg-label-row">
+                                    <label class="fg-label" data-i18n="domain_retention_label">域名统计保留</label>
+                                    <i class="fa fa-info-circle fg-tip" data-i18n-title="domain_retention_doc" aria-hidden="true"></i>
+                                    </div>
+                                    <div class="fg-control">
+                                    <input class="fg-input" type="number" name="domain_stats_retention_days" min="0">
+                                    <span class="fg-unit" data-i18n="unit_days"></span>
+                                    </div>
+                                    <div class="fg-hint" data-i18n="domain_retention_hint">0 表示永久保留</div>
+                                    </div>
+
+                                    <div class="fg" data-visible-when="domain_stats_enabled=true">
+                                    <div class="fg-label-row">
+                                    <label class="fg-label" data-i18n="domain_flush_label">域名统计写入间隔</label>
+                                    <i class="fa fa-info-circle fg-tip" data-i18n-title="domain_flush_doc" aria-hidden="true"></i>
+                                    </div>
+                                    <div class="fg-control">
+                                    <input class="fg-input" type="number" name="domain_stats_flush_interval" min="1">
+                                    <span class="fg-unit" data-i18n="unit_sec"></span>
+                                    </div>
+                                    <div class="fg-hint" data-i18n="domain_flush_hint">内存里的统计每隔这么久写一次库</div>
+                                    </div>
+
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="settings-group" data-group="advanced">
+                        <div class="settings-card">
+                            <div class="settings-card-hd"><i class="fa fa-cog"></i><span data-i18n="advanced_config_title"></span><span class="settings-card-sub" data-i18n="advanced_config_sub"></span></div>
+                            <div class="settings-body">
+
+                                <div class="settings-note" data-i18n="adv_rare_hint">改动前请确认你了解它的作用，其中多数要重启才完全生效</div>
+
+                                <span class="col-label" data-i18n="adv_group_check"></span>
+
+                                    <div class="fg">
+                                    <div class="fg-label-row">
+                                    <label class="fg-label" data-i18n="proxy_check_ttl_label">检测结果缓存</label>
+                                    <i class="fa fa-info-circle fg-tip" data-i18n-title="proxy_check_ttl_doc" aria-hidden="true"></i>
+                                    </div>
+                                    <div class="fg-control">
+                                    <input class="fg-input" type="number" name="proxy_check_ttl" min="0">
+                                    <span class="fg-unit" data-i18n="unit_sec"></span>
+                                    </div>
+                                    <div class="fg-hint" data-i18n="proxy_check_ttl_hint">缓存期内同一出口不重复检测</div>
+                                    </div>
+
+                                    <div class="fg">
+                                    <div class="fg-label-row">
+                                    <label class="fg-label" data-i18n="check_cooldown_label">同一出口检测间隔</label>
+                                    <i class="fa fa-info-circle fg-tip" data-i18n-title="check_cooldown_doc" aria-hidden="true"></i>
+                                    </div>
+                                    <div class="fg-control">
+                                    <input class="fg-input" type="number" name="check_cooldown" min="0">
+                                    <span class="fg-unit" data-i18n="unit_sec"></span>
+                                    </div>
+                                    <div class="fg-hint" data-i18n="check_cooldown_hint">两次存活检测至少隔这么久</div>
+                                    </div>
+
+                                    <div class="fg">
+                                    <div class="fg-label-row">
+                                    <label class="fg-label" data-i18n="switch_cooldown_label">重取出口最小间隔</label>
+                                    <i class="fa fa-info-circle fg-tip" data-i18n-title="switch_cooldown_doc" aria-hidden="true"></i>
+                                    </div>
+                                    <div class="fg-control">
+                                    <input class="fg-input" type="number" name="switch_cooldown" min="0">
+                                    <span class="fg-unit" data-i18n="unit_sec"></span>
+                                    </div>
+                                    <div class="fg-hint" data-i18n="switch_cooldown_hint">两次重取出口至少隔这么久</div>
+                                    </div>
+
+                                    <span class="col-label" data-i18n="adv_group_connections"></span>
+
+                                    <div class="fg">
+                                    <div class="fg-label-row">
+                                    <label class="fg-label" data-i18n="buffer_size_label">转发背压阈值</label>
+                                    <i class="fa fa-info-circle fg-tip" data-i18n-title="buffer_size_doc" aria-hidden="true"></i>
+                                    </div>
+                                    <div class="fg-control">
+                                    <input class="fg-input" type="number" name="buffer_size" min="1024">
+                                    <span class="fg-unit" data-i18n="unit_bytes"></span>
+                                    </div>
+                                    <div class="fg-hint" data-i18n="buffer_size_hint">累计转发这么多字节就暂停等客户端读取</div>
+                                    </div>
+
+                                    <div class="fg">
+                                    <div class="fg-label-row">
+                                    <label class="fg-label" data-i18n="client_keepalive_expiry_label">空闲回收</label>
+                                    <i class="fa fa-info-circle fg-tip" data-i18n-title="client_keepalive_expiry_doc" aria-hidden="true"></i>
+                                    </div>
+                                    <div class="fg-control">
+                                    <input class="fg-input" type="number" name="client_keepalive_expiry" min="0">
+                                    <span class="fg-unit" data-i18n="unit_sec"></span>
+                                    </div>
+                                    <div class="fg-hint" data-i18n="client_keepalive_expiry_hint">空闲多久后关闭保活连接</div>
+                                    </div>
+
+                                    <div class="fg">
+                                    <div class="fg-label-row">
+                                    <label class="fg-label" data-i18n="tunnel_idle_timeout_label">隧道无数据超时</label>
+                                    <i class="fa fa-info-circle fg-tip" data-i18n-title="tunnel_idle_timeout_doc" aria-hidden="true"></i>
+                                    </div>
+                                    <div class="fg-control">
+                                    <input class="fg-input" type="number" name="tunnel_idle_timeout" min="0">
+                                    <span class="fg-unit" data-i18n="unit_sec"></span>
+                                    </div>
+                                    <div class="fg-hint" data-i18n="tunnel_idle_timeout_hint">上游一直不回数据超过这么久就判失效；0 关闭</div>
+                                    </div>
+
+                                    <span class="col-label" data-i18n="adv_group_logfiles"></span>
+
+                                    <div class="fg">
+                                    <div class="fg-label-row">
+                                    <label class="fg-label" data-i18n="log_max_bytes_label">单个日志上限</label>
+                                    <i class="fa fa-info-circle fg-tip" data-i18n-title="log_max_bytes_doc" aria-hidden="true"></i>
+                                    </div>
+                                    <div class="fg-control">
+                                    <input class="fg-input" type="number" name="log_max_bytes" min="1024">
+                                    <span class="fg-unit" data-i18n="unit_bytes"></span>
+                                    </div>
+                                    <div class="fg-hint" data-i18n="log_max_bytes_hint">写满后自动换一个新文件</div>
+                                    </div>
+
+                                    <div class="fg">
+                                    <div class="fg-label-row">
+                                    <label class="fg-label" data-i18n="log_backup_count_label">日志保留</label>
+                                    <i class="fa fa-info-circle fg-tip" data-i18n-title="log_backup_count_doc" aria-hidden="true"></i>
+                                    </div>
+                                    <div class="fg-control">
+                                    <input class="fg-input" type="number" name="log_backup_count" min="1">
+                                    <span class="fg-unit" data-i18n="unit_copies"></span>
+                                    </div>
+                                    <div class="fg-hint" data-i18n="log_backup_count_hint">至少 1；0 会让日志永不轮转</div>
+                                    </div>
+
+                                    <div class="fg">
+                                    <div class="fg-label-row">
+                                    <label class="fg-label" data-i18n="proxy_failure_cooldown_label">重复失败日志抑制</label>
+                                    <i class="fa fa-info-circle fg-tip" data-i18n-title="proxy_failure_cooldown_doc" aria-hidden="true"></i>
+                                    </div>
+                                    <div class="fg-control">
+                                    <input class="fg-input" type="number" name="proxy_failure_cooldown" min="0">
+                                    <span class="fg-unit" data-i18n="unit_sec"></span>
+                                    </div>
+                                    <div class="fg-hint" data-i18n="proxy_failure_cooldown_hint">同一原因在这段时间内只记一条</div>
+                                    </div>
+
+                                    <span class="col-label" data-i18n="advanced_group_runtime"></span>
+
+                                    <div class="fg">
+                                    <div class="fg-label-row">
+                                    <label class="fg-label" data-i18n="display_level_label">命令行显示级别</label>
+                                    <i class="fa fa-info-circle fg-tip" data-i18n-title="display_level_doc" aria-hidden="true"></i>
+                                    </div>
+                                    <select class="fg-select" name="display_level">
+                                    <option value="0" data-i18n="display_level_0">0 只显示状态行</option>
+                                    <option value="1" data-i18n="display_level_1">1 显示经过与出口清单</option>
+                                    <option value="2" data-i18n="display_level_2">2 逐条显示请求</option>
+                                    </select>
+                                    <div class="fg-hint" data-i18n="display_level_hint">只影响命令行运行 ProxyCat.py 时的输出</div>
+
+                                    </div>
+
+                                    <span class="col-label" data-i18n="advanced_group_version"></span>
+
+                                    <div class="fg">
+                                    <div class="fg-label-row">
+                                    <label class="fg-label" data-i18n="version_check_url_label">版本检查地址</label>
+                                    <i class="fa fa-info-circle fg-tip" data-i18n-title="version_check_url_doc" aria-hidden="true"></i>
+                                    </div>
+                                    <input class="fg-input" name="version_check_url" placeholder="留空表示不检查更新">
+                                    <div class="fg-hint" data-i18n="version_check_url_hint">留空用内置的 GitHub 地址；填了只用这个，保存后下次检查生效</div>
+                                    </div>
+
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="cfg-actions sticky">
+                    <span class="dirty-hint" id="server-dirty-hint" style="display:none"><i class="fa fa-circle"></i><span data-i18n="server_dirty_hint">未保存</span></span>
+                    <span class="saved-hint" id="server-saved-hint" style="display:none"></span>
+                    <button class="btn" id="btn-reset-config" onclick="discardServerChanges()"><i class="fa fa-undo"></i> <span data-i18n="reset_form_btn">放弃修改</span></button>
+                    <button class="btn pri" id="btn-save-config" onclick="saveAllConfig()"><i class="fa fa-save"></i> <span data-i18n="save_config">保存配置</span></button>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+        <div class="tab-body" id="tab-pool">
+
+            <div class="pool-view show" id="pool-view-manage">
+
+            <div class="pool-ctl">
+                <span class="pool-ctl-state">
+                    <span class="dot" id="pool-ctl-dot"></span>
+                    <span class="pool-ctl-text" id="pool-ctl-text">--</span>
+                    <span class="pool-ctl-label" data-i18n="pool_tab">代理池</span>
+                </span>
+                <button class="btn sm ok" id="pool-start" onclick="controlPool('start')">
+                    <i class="fa fa-play"></i> <span data-i18n="start_service">启动</span>
+                </button>
+                <button class="btn sm bad" id="pool-stop" onclick="controlPool('stop')">
+                    <i class="fa fa-stop"></i> <span data-i18n="stop_service">停止</span>
+                </button>
+            </div>
+
+            <div class="stat-grid">
+                <div class="stat-card">
+                    <span class="stat-val" id="st-total">--</span>
+                    <span class="stat-lbl" data-i18n="pool_stat_total">代理总数</span>
+                    <span class="stat-spark" id="st-total-spark"></span>
+                </div>
+                <div class="stat-card ok">
+                    <span class="stat-val" id="st-valid">--</span>
+                    <span class="stat-lbl" data-i18n="pool_stat_valid">有效代理</span>
+                    <span class="stat-spark" id="st-valid-spark"></span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-val" id="st-invalid">--</span>
+                    <span class="stat-lbl" data-i18n="pool_stat_invalid">失效代理</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-val" id="st-rate">--</span>
+                    <span class="stat-lbl" data-i18n="pool_stat_rate">可用率</span>
+                    <span class="stat-spark" id="st-rate-spark"></span>
+                </div>
+            </div>
+
+            <div class="notice" id="stats-fallback-hint" style="display:none">
+                <i class="fa fa-info-circle"></i><span id="stats-fallback-text"></span>
+            </div>
+
+            <div class="notice" id="host-ip-hint" style="display:none">
+                <i class="fa fa-info-circle"></i><span id="host-ip-text"></span>
+            </div>
+
+            <div class="notice notice-warn" id="pool-notice" style="display:none">
+                <i class="fa fa-exclamation-triangle"></i>
+                <span id="pool-notice-text"></span>
+                <button class="btn sm" onclick="controlPool('start')">
+                    <i class="fa fa-play"></i> <span data-i18n="start_service">启动</span>
+                </button>
+            </div>
+
+            <div class="section">
+                <div class="section-hd">
+                    <i class="fa fa-puzzle-piece"></i>
+                    <span data-i18n="plugin_management_title">插件管理</span>
+                    <span class="col-badge" id="plugin-count" style="display:none"></span>
+                    <button class="btn sm" id="btn-reload-plugins" onclick="loadPlugins()" data-requires-pool>
+                        <i class="fa fa-refresh"></i> <span data-i18n="refresh_btn">刷新</span>
+                    </button>
+                </div>
+
+                <div class="toolbar-row">
+                    <button class="btn pri sm" id="btn-validate-valid" onclick="validateAllProxies(true)" data-requires-pool>
+                        <i class="fa fa-check-circle"></i> <span data-i18n="validate_valid_btn">验证全部有效</span>
+                    </button>
+                    <button class="btn sm" id="btn-validate-invalid" onclick="validateAllProxies(false)" data-requires-pool>
+                        <i class="fa fa-question-circle"></i> <span data-i18n="validate_invalid_btn">验证全部失效</span>
+                    </button>
+                    <button class="btn sm" id="btn-full-check" onclick="updateAllGeo()" data-requires-pool>
+                        <i class="fa fa-globe"></i> <span data-i18n="full_check_btn">全面检测</span>
+                    </button>
+                </div>
+
+                <div class="task-area" id="task-area"></div>
+
+                <table class="tbl-clean tbl-plugin">
+                    <thead>
+                        <tr>
+                            <th data-i18n="plugin_col_name">插件</th>
+                            <th data-i18n="plugin_col_status">状态</th>
+                            <th data-i18n="plugin_col_interval">抓取周期</th>
+                            <th data-i18n="plugin_col_last_run">上次运行</th>
+                            <th data-i18n="plugin_col_next_run">下次运行</th>
+                            <th data-i18n="plugin_col_reval">重验证</th>
+                            <th data-i18n="plugin_col_actions">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="plugin-tbody"></tbody>
+                </table>
+            </div>
+
+            <div class="section">
+                <div class="section-hd">
+                    <i class="fa fa-list-ul"></i>
+                    <span data-i18n="proxy_list_title">代理列表</span>
+                    <span class="col-badge" id="proxy-count-badge" style="display:none"></span>
+                    <button class="btn sm" onclick="openImportModal()" data-requires-pool>
+                        <i class="fa fa-upload"></i> <span data-i18n="import_btn">导入</span>
+                    </button>
+                    <button class="btn sm" onclick="openExportModal()" data-requires-pool>
+                        <i class="fa fa-download"></i> <span data-i18n="export_btn">导出</span>
+                    </button>
+                    <button class="btn sm" onclick="copyPoolApiLink()">
+                        <i class="fa fa-link"></i> <span data-i18n="copy_api_link_btn">复制取用链接</span>
+                    </button>
+                    <button class="btn sm" id="density-btn" onclick="toggleTableDensity()" data-i18n-title="density_hint" title="切换表格行高">
+                        <i class="fa fa-th-list"></i> <span data-i18n="density_btn">行高</span>
+                    </button>
+                    <button class="btn sm" onclick="resetColumnWidths()" data-i18n-title="reset_columns_hint" title="列宽回到随内容自适应">
+                        <i class="fa fa-columns"></i> <span data-i18n="reset_columns_btn">重置列宽</span>
+                    </button>
+                    <button class="btn sm" onclick="loadProxies()" data-requires-pool>
+                        <i class="fa fa-refresh"></i> <span data-i18n="refresh_btn">刷新</span>
+                    </button>
+                </div>
+
+                <div class="filter-bar">
+                    <select class="fg-select" id="filter-protocol" onchange="applyFilters()">
+                        <option value="" data-i18n="filter_all_protocol">全部协议</option>
+                        <option value="http">HTTP</option>
+                        <option value="https">HTTPS</option>
+                        <option value="socks5">SOCKS5</option>
+                    </select>
+                    <select class="fg-select" id="filter-status" onchange="applyFilters()">
+                        <option value="valid" data-i18n="filter_valid">仅有效</option>
+                        <option value="invalid" data-i18n="filter_invalid">仅失效</option>
+                        <option value="" data-i18n="filter_all_status">全部状态</option>
+                    </select>
+                    <select class="fg-select" id="filter-favorite" onchange="applyFilters()">
+                        <option value="" data-i18n="filter_all_favorite">全部</option>
+                        <option value="1" data-i18n="filter_favorite">仅收藏</option>
+                    </select>
+                    <select class="fg-select" id="filter-anonymity" onchange="applyFilters()">
+                        <option value="" data-i18n="filter_all_anonymity">全部匿名度</option>
+                        <option value="elite" data-i18n="anon_elite">高匿</option>
+                        <option value="anonymous" data-i18n="anon_anonymous">匿名</option>
+                        <option value="transparent" data-i18n="anon_transparent">透明</option>
+                        <option value="unverified" data-i18n="anon_unverified">未验证</option>
+                    </select>
+                    <select class="fg-select" id="filter-source" onchange="applyFilters()"></select>
+                    <button class="btn sm" onclick="toggleAdvancedFilters()">
+                        <i class="fa fa-chevron-down" id="advanced-icon"></i>
+                        <span data-i18n="advanced_filter_btn">高级筛选</span>
+                    </button>
+                </div>
+
+                <div class="filter-bar filter-bar-advanced" id="advanced-filters" style="display:none">
+                    <input class="fg-input" id="filter-region" placeholder="地区（- 前缀表示排除）"
+                           data-i18n-placeholder="filter_region_ph" oninput="onFilterInput()">
+                    <input class="fg-input" id="filter-ip" data-i18n-placeholder="filter_ip_ph" placeholder="IP 模糊搜索" oninput="onFilterInput()">
+                    <input class="fg-input" type="number" id="filter-min-delay" data-i18n-placeholder="filter_min_delay_ph" placeholder="最小延迟(ms)" oninput="onFilterInput()">
+                    <input class="fg-input" type="number" id="filter-max-delay" data-i18n-placeholder="filter_max_delay_ph" placeholder="最大延迟(ms)" oninput="onFilterInput()">
+                    <input class="fg-input" type="number" id="filter-min-health" data-i18n-placeholder="filter_min_health_ph" placeholder="最低健康分" min="0" max="100" oninput="onFilterInput()">
+                    <button class="btn sm" onclick="resetFilters()">
+                        <i class="fa fa-undo"></i> <span data-i18n="reset_filter_btn">重置</span>
+                    </button>
+                </div>
+
+                <div class="batch-bar" id="batch-bar" style="display:none">
+                    <label class="chk-inline">
+                        <input type="checkbox" id="select-all" onchange="toggleSelectAll(this.checked)">
+                        <span data-i18n="select_all_label">全选本页</span>
+                    </label>
+                    <span class="batch-count" id="selected-count"></span>
+                    <span class="batch-sep"></span>
+                    <button class="btn pri sm" id="btn-batch-validate" onclick="validateSelected('liveness')" disabled data-requires-pool>
+                        <i class="fa fa-check"></i> <span data-i18n="validate_selected_btn">验证有效性</span>
+                    </button>
+                    <button class="btn sm" id="btn-batch-validate-full" onclick="validateSelected('full')" disabled data-requires-pool>
+                        <i class="fa fa-stethoscope"></i> <span data-i18n="validate_full_btn">验证全部内容</span>
+                    </button>
+                    <span class="batch-sep"></span>
+                    <button class="btn bad sm" id="btn-batch-delete" onclick="deleteSelected()" disabled data-requires-pool>
+                        <i class="fa fa-trash"></i> <span data-i18n="delete_selected_btn">删除选中</span>
+                    </button>
+                    <button class="btn xs bad" onclick="deleteAllInvalid()" data-requires-pool>
+                        <i class="fa fa-broom"></i> <span data-i18n="delete_invalid_btn">清除全部失效</span>
+                    </button>
+                </div>
+
+                <div class="table-scroll">
+                    <table class="tbl-clean tbl-proxy" id="proxy-table">
+                        <thead>
+                            <tr>
+                                <th class="cell-protocol" data-col="protocol"><span data-i18n="col_protocol">协议</span><span class="col-resize"></span></th>
+                                <th class="cell-addr" data-col="addr"><span data-i18n="col_address">代理地址</span><span class="col-resize"></span></th>
+                                <th class="cell-real-ip" data-col="real-ip"><span data-i18n="col_real_ip">真实IP</span><span class="col-resize"></span></th>
+                                <th class="cell-region th-sort" data-col="region" data-sort="region" onclick="sortBy('region')">
+                                    <span data-i18n="col_region">地区</span> <i class="fa fa-sort sort-icon" id="sort-region"></i><span class="col-resize"></span>
+                                </th>
+                                <th class="cell-delay th-sort" data-col="delay" data-sort="delay_ms" onclick="sortBy('delay_ms')">
+                                    <span data-i18n="col_delay">延迟</span> <i class="fa fa-sort sort-icon" id="sort-delay_ms"></i><span class="col-resize"></span>
+                                </th>
+                                <th class="cell-health th-sort" data-col="health" data-sort="health_score" onclick="sortBy('health_score')">
+                                    <span data-i18n="col_health">健康分</span> <i class="fa fa-sort sort-icon" id="sort-health_score"></i><span class="col-resize"></span>
+                                </th>
+                                <th class="cell-anonymity" data-col="anonymity"><span data-i18n="col_anonymity">匿名度</span><span class="col-resize"></span></th>
+                                <th class="cell-actions" data-col="actions" data-i18n="col_actions">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="proxy-tbody"></tbody>
+                    </table>
+                </div>
+
+                <div class="pager">
+                    <select class="fg-select pager-size" id="page-size" onchange="changePageSize()" data-requires-pool>
+                        <option value="20">20</option>
+                        <option value="50">50</option>
+                        <option value="100">100</option>
+                        <option value="300">300</option>
+                        <option value="500">500</option>
+                    </select>
+                    <button class="btn sm" id="first-btn" onclick="gotoPage(1)" data-i18n-title="page_first" data-requires-pool>
+                        <i class="fa fa-step-backward"></i>
+                    </button>
+                    <button class="btn sm" id="prev-btn" onclick="previousPage()" data-i18n-title="page_prev" data-requires-pool>
+                        <i class="fa fa-chevron-left"></i>
+                    </button>
+                    <input class="fg-input pager-jump" id="page-jump" type="number" min="1"
+                           onchange="gotoPage(this.value)" onkeydown="if(event.key==='Enter')gotoPage(this.value)"
+                           data-requires-pool>
+                    <button class="btn sm" id="next-btn" onclick="nextPage()" data-i18n-title="page_next" data-requires-pool>
+                        <i class="fa fa-chevron-right"></i>
+                    </button>
+                    <button class="btn sm" id="last-btn" onclick="gotoPage(-1)" data-i18n-title="page_last" data-requires-pool>
+                        <i class="fa fa-step-forward"></i>
+                    </button>
+                    <span class="pager-total" id="total-count"></span>
+                </div>
+            </div>
+        </div>
+
+            <div class="pool-view" id="pool-view-settings">
+                <div class="adv-toolbar" id="adv-toggle-wrap" style="display:none">
+                    <button class="btn sm" onclick="toggleAllAdvanced()">
+                        <i class="fa fa-chevron-down" id="adv-toggle-icon"></i>
+                        <span id="adv-toggle-text" data-i18n="adv_expand_all">展开全部高级选项</span>
+                    </button>
+                </div>
+
+                <div class="settings-layout">
+                    <div class="settings-nav" id="pool-settings-nav">
+                    </div>
+                    <div class="settings-main">
+                        <div id="pool-form"></div>
+
+                        <div class="cfg-actions sticky">
+                            <span class="dirty-hint" id="pool-dirty-hint" style="display:none">
+                                <i class="fa fa-circle"></i><span data-i18n="unsaved_hint">未保存</span>
+                            </span>
+                            <span class="saved-hint" id="pool-saved-hint" style="display:none"></span>
+                            <button class="btn" id="btn-reset-pool-config" onclick="discardPoolChanges()">
+                                <i class="fa fa-undo"></i> <span data-i18n="reset_form_btn">放弃修改</span>
+                            </button>
+                            <button class="btn pri" id="btn-save-pool-config" onclick="savePoolConfig()">
+                                <i class="fa fa-save"></i> <span data-i18n="save_config">保存配置</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="pool-view" id="pool-view-db">
+                <div class="section">
+                    <div class="section-hd">
+                        <i class="fa fa-database"></i>
+                        <span data-i18n="db_maintain_title">数据库维护</span>
+                        <button class="btn sm" onclick="loadDbMaintain()">
+                            <i class="fa fa-refresh"></i> <span data-i18n="refresh_btn">刷新</span>
+                        </button>
+                        <button class="btn sm" id="btn-db-optimize" onclick="optimizeDatabase()" data-requires-pool>
+                            <i class="fa fa-bolt"></i> <span data-i18n="db_optimize_btn">优化数据库</span>
+                        </button>
+                    </div>
+                    <div class="metric-strip" id="db-stats-text"></div>
+                    <div class="db-backups" id="db-backup-list"></div>
+                </div>
+
+                <div class="section">
+                    <div class="section-hd">
+                        <i class="fa fa-globe"></i>
+                        <span data-i18n="geo_title">归属地库</span>
+                        <button class="btn sm" onclick="loadGeoStatus()">
+                            <i class="fa fa-refresh"></i> <span data-i18n="refresh_btn">刷新</span>
+                        </button>
+                        <button class="btn sm" id="btn-geo-update" onclick="startGeoUpdate()" data-requires-pool>
+                            <i class="fa fa-download"></i> <span data-i18n="geo_update_btn">更新归属地库</span>
+                        </button>
+                        <button class="btn sm" id="btn-geo-recompute" onclick="startGeoRecompute()" data-requires-pool disabled>
+                            <i class="fa fa-refresh"></i> <span data-i18n="geo_recompute_btn">重算归属地</span>
+                        </button>
+                    </div>
+                    <div class="hint-text" id="geo-status-text">--</div>
+                    <div class="task-msg" id="geo-progress-text" style="display:none">
+                        <i class="fa fa-spinner fa-spin" id="geo-progress-icon"></i>
+                        <span id="geo-progress-msg"></span>
+                    </div>
+                    <div class="db-backups" id="geo-file-list"></div>
+                </div>
+            </div>
+
+        </div>
+
+        <div class="tab-body" id="tab-access">
+            <div class="tab-cols">
+
+                <div>
+                    <div class="col-hd"><i class="fa fa-users"></i> <span data-i18n="user_management_title">用户管理</span><span class="col-badge" id="user-count" style="display:none"></span></div>
+                    <div class="ip-block">
+                        <table class="tbl-clean" id="user-table">
+                            <thead><tr><th data-i18n="username_column">用户名</th><th data-i18n="password_column">密码</th><th></th></tr></thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                    <div class="ip-ft">
+                        <button class="btn pri sm" onclick="addUser()"><i class="fa fa-plus"></i> <span data-i18n="add_user_btn">添加用户</span></button>
+                    </div>
+                    <!-- 左栏只有一张用户表，撑满高度会变成一大片空白。
+                         底部补一段说明，既解释用途，也让这一列有收尾。 -->
+                    <div class="col-note">
+                        <i class="fa fa-info-circle"></i>
+                        <div>
+                            <p data-i18n="user_note_1">账号用于 HTTP / SOCKS5 代理认证，保存后立即生效，无需重启。</p>
+                            <p data-i18n="user_note_2">密码以明文保存在本地 config 目录，请勿在公网环境使用弱口令。</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div>
+                    <div class="col-hd"><i class="fa fa-shield"></i> <span data-i18n="ip_lists">IP访问控制</span></div>
+                    <div class="ip-stack">
+                        <div class="ip-block">
+                            <div class="ip-block-hd"><i class="fa fa-check-circle"></i> <span data-i18n="whitelist_title">白名单</span></div>
+                            <textarea id="whitelist" rows="4" placeholder="127.0.0.1"></textarea>
+                        </div>
+                        <div class="ip-block">
+                            <div class="ip-block-hd"><i class="fa fa-times-circle"></i> <span data-i18n="blacklist_title">黑名单</span></div>
+                            <textarea id="blacklist" rows="4" placeholder="192.168.1.1"></textarea>
+                        </div>
+                    </div>
+                    <div class="ip-ft">
+                        <select class="fg-select" name="ip_auth_priority">
+                            <option value="whitelist" data-i18n="whitelist_first">白名单优先</option>
+                            <option value="blacklist" data-i18n="blacklist_first">黑名单优先</option>
+                        </select>
+                        <button class="btn pri sm" onclick="saveIpLists(this)"><i class="fa fa-save"></i> <span data-i18n="save_list_btn">保存名单</span></button>
+                    </div>
+                </div>
+
+            </div>
+
+                    <div class="bypass-block">
+                        <div class="bypass-block-hd">
+                            <i class="fa fa-forward"></i>
+                            <span data-i18n="bypass_whitelist_title">代理绕过白名单</span>
+                            <span class="bypass-hint" data-i18n="bypass_whitelist_hint">匹配的域名/IP将直连不经过代理，支持通配符</span>
+                        </div>
+                        <textarea id="bypass-whitelist" rows="6" placeholder="*.baidu.com&#10;192.168.1.*&#10;example.com"></textarea>
+                        <div class="bypass-ft">
+                            <button class="btn pri sm" onclick="saveBypassWhitelist(this)"><i class="fa fa-save"></i> <span data-i18n="save_list_btn">保存名单</span></button>
+                        </div>
+                    </div>
+            </div>
+
+        <div class="tab-body" id="tab-logs">
+            <div class="log-toolbar">
+                <div class="log-cat-pills" id="log-cat-pills">
+                    <button class="log-cat-pill cur" data-cat="all" onclick="setLogCategory('all')"><span data-i18n="log_cat_all">全部</span></button>
+                    <button class="log-cat-pill" data-cat="main" onclick="setLogCategory('main')"><span data-i18n="log_cat_main">主程序</span></button>
+                    <button class="log-cat-pill" data-cat="proxy" onclick="setLogCategory('proxy')"><span data-i18n="log_cat_proxy">代理</span></button>
+                    <button class="log-cat-pill" data-cat="access" onclick="setLogCategory('access')"><span data-i18n="log_cat_access">访问</span></button>
+                    <button class="log-cat-pill" data-cat="pool" onclick="setLogCategory('pool')"><span data-i18n="log_cat_pool">池</span></button>
+                </div>
+                <span class="log-toolbar-sep"></span>
+                <div class="log-lv-pills" id="log-level-pills">
+                    <button class="log-lv-pill cur" data-lv="ALL" onclick="setLogLevel('ALL')"><span data-i18n="log_level_all">全部</span></button>
+                    <button class="log-lv-pill" data-lv="IMPORTANT" onclick="setLogLevel('IMPORTANT')"><span data-i18n="log_level_important">重要</span></button>
+                    <button class="log-lv-pill" data-lv="INFO" onclick="setLogLevel('INFO')"><span data-i18n="log_level_info">信息</span></button>
+                    <button class="log-lv-pill" data-lv="WARNING" onclick="setLogLevel('WARNING')"><span data-i18n="log_level_warning">警告</span></button>
+                    <button class="log-lv-pill" data-lv="ERROR" onclick="setLogLevel('ERROR')"><span data-i18n="log_level_error">错误</span></button>
+                    <button class="log-lv-pill" data-lv="CRITICAL" onclick="setLogLevel('CRITICAL')"><span data-i18n="log_level_critical">严重错误</span></button>
+                </div>
+                <input type="hidden" id="log-level" value="ALL">
+                <input type="hidden" id="log-category" value="all">
+            </div>
+            <div class="log-toolbar">
+                <div class="log-search-wrap">
+                    <i class="fa fa-search"></i>
+                    <input id="log-search" data-i18n-placeholder="log_search_ph" placeholder="搜索日志..." oninput="onLogSearch()">
+                    <button class="log-srch-clr" id="log-clear-btn" onclick="clearLogSearch()" data-i18n-title="log_clear_search" title="清空搜索"><i class="fa fa-times"></i></button>
+                </div>
+                <select id="log-file-select" class="log-file-select" onchange="onLogSourceChange()"
+                        data-i18n-title="log_source_title" title="查看已轮转的历史日志文件">
+                    <option value="" data-i18n="log_source_live">实时日志</option>
+                </select>
+                <button class="log-follow on" id="log-auto-btn" onclick="toggleLogAuto()"
+                        data-i18n-title="log_auto_refresh_title" title="暂停后不再自动刷新，便于停下来阅读">
+                    <i class="fa fa-refresh"></i> <span data-i18n="log_auto_btn">自动刷新</span>
+                </button>
+                <button class="log-follow on" id="log-follow-btn" onclick="toggleLogFollow()"
+                        data-i18n-title="log_follow_latest" title="跟随最新日志">
+                    <i class="fa fa-arrow-down"></i> <span data-i18n="log_follow_btn">跟随</span>
+                </button>
+                <button class="btn sm" onclick="exportLogs()"><i class="fa fa-download"></i> <span data-i18n="export_logs_btn">导出</span></button>
+                <span id="log-clear-btn-wrap"><button class="btn bad sm" onclick="clearLogs()"><i class="fa fa-trash"></i> <span data-i18n="clear_logs_btn">清除日志</span></button></span>
+            </div>
+            <div class="log-stats" id="log-stats"></div>
+            <div class="log-box" id="log-container"></div>
+
+            <div class="access-hint" id="access-hint">
+                <i class="fa fa-bar-chart"></i>
+                <span data-i18n="access_hint_text">按代理汇总的访问统计与逐条访问明细在「访问」分类下</span>
+                <button class="btn sm" onclick="showAccessStats()">
+                    <span data-i18n="access_hint_btn">切到「访问」</span> <i class="fa fa-arrow-right"></i>
+                </button>
+            </div>
+
+            <div class="domain-panel" id="access-stats-panel">
+                <div class="log-lv-pills" id="access-mode-pills">
+                    <button class="log-lv-pill cur" data-access-mode="summary" onclick="setAccessMode('summary')"><span data-i18n="access_mode_summary">按代理汇总</span></button>
+                    <button class="log-lv-pill" data-access-mode="records" onclick="setAccessMode('records')"><span data-i18n="access_mode_records">逐条明细</span></button>
+                </div>
+
+                <div id="access-summary-view">
+                    <div class="domain-head">
+                        <span class="domain-title"><i class="fa fa-globe"></i> <span data-i18n="access_stats_title">访问统计（按代理汇总）</span></span>
+                        <span class="domain-summary" id="domain-summary"></span>
+                        <div class="log-search-wrap domain-search-wrap">
+                            <i class="fa fa-search"></i>
+                            <input id="domain-search" data-i18n-placeholder="domain_search_ph" placeholder="搜索代理地址..." oninput="onDomainSearch()">
+                        </div>
+                        <button class="btn bad sm" onclick="clearDomainStats()"><i class="fa fa-eraser"></i> <span data-i18n="domain_clear_btn">清空统计</span></button>
+                    </div>
+                    <div class="domain-table-wrap">
+                        <table class="domain-table">
+                            <thead>
+                                <tr>
+                                    <th class="domain-sortable" onclick="sortDomainStats('upstream')"><span data-i18n="access_col_upstream">出口地址</span></th>
+                                    <th class="domain-sortable cell-num" onclick="sortDomainStats('success')"><span data-i18n="domain_col_success">成功</span></th>
+                                    <th class="domain-sortable cell-num" onclick="sortDomainStats('failure')"><span data-i18n="domain_col_failure">失败</span></th>
+                                    <th class="domain-sortable cell-num" onclick="sortDomainStats('total')"><span data-i18n="domain_col_total">合计</span></th>
+                                    <th><span data-i18n="domain_col_rate">成功率</span></th>
+                                    <th class="domain-sortable" onclick="sortDomainStats('last_seen')"><span data-i18n="domain_col_last">最后访问</span></th>
+                                    <th><span data-i18n="domain_col_reason">最后失败原因</span></th>
+                                </tr>
+                            </thead>
+                            <tbody id="domain-tbody"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div id="access-records-view" style="display:none">
+                    <div class="domain-head">
+                        <span class="domain-title"><i class="fa fa-list-ul"></i> <span data-i18n="records_title">访问记录明细</span></span>
+                        <span class="domain-summary" id="records-summary"></span>
+                        <button class="log-follow on" id="records-auto-btn" onclick="toggleRecordsAuto()"
+                                data-i18n-title="records_auto_title" title="翻页时会自动暂停，避免新记录把结果挤得重复">
+                            <i class="fa fa-refresh"></i> <span data-i18n="log_auto_btn">自动刷新</span>
+                        </button>
+                        <select class="fg-select" id="records-format">
+                            <option value="csv">CSV</option>
+                            <option value="json">JSON</option>
+                        </select>
+                        <button class="btn sm" onclick="exportAccessRecords()"><i class="fa fa-download"></i> <span data-i18n="records_export_btn">导出</span></button>
+                        <button class="btn bad sm" onclick="clearAccessRecords()"><i class="fa fa-eraser"></i> <span data-i18n="records_clear_btn">清空明细</span></button>
+                    </div>
+
+                    <div class="filter-bar">
+                        <button class="log-lv-pill" data-records-range="5m" onclick="setRecordsRange('5m')"><span data-i18n="records_range_5m">最近 5 分钟</span></button>
+                        <button class="log-lv-pill cur" data-records-range="1h" onclick="setRecordsRange('1h')"><span data-i18n="records_range_1h">最近 1 小时</span></button>
+                        <button class="log-lv-pill" data-records-range="24h" onclick="setRecordsRange('24h')"><span data-i18n="records_range_24h">最近 24 小时</span></button>
+                        <button class="log-lv-pill" data-records-range="today" onclick="setRecordsRange('today')"><span data-i18n="records_range_today">今天</span></button>
+                        <input class="fg-input" type="datetime-local" id="records-since" onchange="onRecordsRangeChange()" data-i18n-title="records_since_title" title="起始时间（含）">
+                        <input class="fg-input" type="datetime-local" id="records-until" onchange="onRecordsRangeChange()" data-i18n-title="records_until_title" title="结束时间（含）；留空表示一直查到当前">
+                    </div>
+
+                    <div class="filter-bar">
+                        <select class="fg-select" id="records-outcome" onchange="onRecordsFilterChange()">
+                            <option value="" data-i18n="records_outcome_all">全部结果</option>
+                            <option value="success" data-i18n="access_outcome_success">成功</option>
+                            <option value="failure" data-i18n="access_outcome_failure">失败</option>
+                            <option value="aborted" data-i18n="access_outcome_aborted">中断</option>
+                        </select>
+                        <select class="fg-select" id="records-upstream" onchange="onRecordsFilterChange()"></select>
+                        <div class="log-search-wrap domain-search-wrap">
+                            <i class="fa fa-search"></i>
+                            <input id="records-search" data-i18n-placeholder="records_search_ph" placeholder="搜索域名 / 客户端 / 原因..." oninput="onRecordsSearch()">
+                        </div>
+                        <button class="btn sm" onclick="loadAccessRecords()"><i class="fa fa-refresh"></i> <span data-i18n="refresh_btn">刷新</span></button>
+                    </div>
+
+                    <div class="domain-table-wrap">
+                        <table class="domain-table" id="records-table">
+                            <thead>
+                                <tr>
+                                    <th><span data-i18n="records_col_time">时间</span></th>
+                                    <th><span data-i18n="records_col_client">客户端</span></th>
+                                    <th><span data-i18n="records_col_target">目标</span></th>
+                                    <th><span data-i18n="records_col_upstream">出口地址</span></th>
+                                    <th><span data-i18n="records_col_real_ip">真实IP</span></th>
+                                    <th><span data-i18n="records_col_outcome">结果</span></th>
+                                    <th><span data-i18n="records_col_status">状态码</span></th>
+                                    <th><span data-i18n="records_col_elapsed">耗时</span></th>
+                                    <th><span data-i18n="records_col_reason">原因</span></th>
+                                </tr>
+                            </thead>
+                            <tbody id="records-tbody"></tbody>
+                        </table>
+                    </div>
+
+                    <div class="pager">
+                        <button class="btn sm" id="records-prev-btn" onclick="recordsPrevPage()">
+                            <i class="fa fa-chevron-left"></i> <span data-i18n="records_prev_page">上一页</span>
+                        </button>
+                        <span class="pager-info" id="records-page-info">-</span>
+                        <button class="btn sm" id="records-next-btn" onclick="recordsNextPage()">
+                            <span data-i18n="records_next_page">下一页</span> <i class="fa fa-chevron-right"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+        </div>
+
+        <!-- 页脚：内容少的页面（配置、访问控制）下方会剩一段背景，
+             用一条页脚收尾，页面看起来是"结束了"而不是"没填满"。 -->
+        <footer class="app-footer">
+            <span class="af-left">
+                <b class="af-brand">ProxyCat</b>
+                <span class="af-dot"></span>
+                <span data-i18n="footer_tagline">本地代理池 · 单进程运行</span>
+            </span>
+            <span class="af-right">
+                <span data-i18n="footer_ports">HTTP / SOCKS5 同端口</span>
+                <span class="af-dot"></span>
+                <span class="af-ver">{{ app_version }}</span>
+            </span>
+        </footer>
+    </main>
+</div>
+
+<div class="toast-stack" id="toast-stack" role="status" aria-live="polite"></div>
+
+<div class="task-dock" id="task-dock" onclick="gotoTaskView()">
+    <div class="task-dock-hd">
+        <i class="fa fa-spinner fa-spin"></i>
+        <span data-i18n="task_dock_title">后台任务</span>
+        <span class="task-dock-count" id="task-dock-count"></span>
+    </div>
+    <div class="task-dock-msg" id="task-dock-msg"></div>
+    <div class="task-dock-bar"><span id="task-dock-bar" style="width:0%"></span></div>
+</div>
+
+<button class="scroll-top-btn" id="scroll-top-btn" onclick="scrollToTop()" data-i18n-title="scroll_to_top" title="回到顶部">
+    <i class="fa fa-arrow-up"></i>
+</button>
+
+<div class="modal-overlay palette-overlay" id="cmd-palette">
+    <div class="palette" role="dialog" aria-modal="true" aria-labelledby="palette-input">
+        <div class="palette-search">
+            <i class="fa fa-search"></i>
+            <input id="palette-input" type="text" autocomplete="off"
+                   data-i18n-placeholder="cmd_placeholder" placeholder="搜索命令…">
+        </div>
+        <div class="palette-list" id="palette-list"></div>
+        <div class="palette-foot">
+            <span><kbd>↑</kbd><kbd>↓</kbd> <span data-i18n="cmd_hint_nav">选择</span></span>
+            <span><kbd>Enter</kbd> <span data-i18n="cmd_hint_run">执行</span></span>
+            <span><kbd>Esc</kbd> <span data-i18n="cmd_hint_close">关闭</span></span>
+        </div>
+    </div>
+</div>
+
+<div class="modal-overlay" id="shortcut-modal">
+    <div class="modal-box modal-box-wide" role="dialog" aria-modal="true">
+        <div class="modal-title" data-i18n="shortcut_title">快捷键</div>
+        <div class="shortcut-grid" id="shortcut-grid"></div>
+        <div class="modal-actions">
+            <button class="btn" onclick="closeModal('shortcut-modal')"><span data-i18n="drawer_close">关闭</span></button>
+        </div>
+    </div>
+</div>
+
+<div class="drawer-scrim" id="drawer-scrim" onclick="closeRowDrawer()"></div>
+
+<aside class="row-drawer" id="row-drawer" role="dialog" aria-modal="true" aria-labelledby="drawer-title">
+    <div class="drawer-hd">
+        <div class="drawer-hd-text">
+            <span class="drawer-title" id="drawer-title"></span>
+            <span class="drawer-sub" id="drawer-sub"></span>
+        </div>
+        <button class="icon-btn" onclick="closeRowDrawer()" data-i18n-title="drawer_close" title="关闭">
+            <i class="fa fa-times"></i>
+        </button>
+    </div>
+    <div class="drawer-body" id="drawer-body"></div>
+    <div class="drawer-ft" id="drawer-ft"></div>
+</aside>
+
+<div class="ctx-menu" id="ctx-menu"></div>
+
+<div class="tip-pop" id="tip-pop" role="tooltip"></div>
+
+<div class="modal-overlay" id="modal-overlay">
+    <div class="modal-box" role="dialog" aria-modal="true">
+        <div class="modal-icon" id="modal-icon"><i class="fa fa-question-circle"></i></div>
+        <div class="modal-title" id="modal-title"></div>
+        <div class="modal-body" id="modal-body"></div>
+        <input class="modal-input" id="modal-input" type="text" style="display:none">
+        <div class="modal-actions">
+            <button class="btn" id="modal-cancel"><span data-i18n="modal_cancel">取消</span></button>
+            <button class="btn pri" id="modal-ok"><span data-i18n="modal_confirm">确定</span></button>
+        </div>
+    </div>
+</div>
+
+<div class="modal-overlay" id="import-modal">
+    <div class="modal-box modal-box-wide" role="dialog" aria-modal="true">
+        <div class="modal-title" data-i18n="import_title">导入代理</div>
+        <div class="modal-body" data-i18n="import_hint">每行一个代理，支持 http/https/socks5 三种协议，可带账号密码。</div>
+        <textarea class="modal-textarea" id="import-text" rows="12"
+                  placeholder="http://1.2.3.4:8080&#10;socks5://user:pass@5.6.7.8:1080"></textarea>
+        <div class="import-count" id="import-count"></div>
+        <div class="modal-body" data-i18n="import_validate_note">导入的代理会先逐个验证，只有确认可用的才会入库；归属地在入库后自动异步查询。</div>
+        <div class="modal-actions">
+            <button class="btn" onclick="closeImportModal()"><span data-i18n="modal_cancel">取消</span></button>
+            <button class="btn pri" id="btn-import-submit" onclick="submitImport()">
+                <i class="fa fa-upload"></i> <span data-i18n="import_submit">开始导入</span>
+            </button>
+        </div>
+    </div>
+</div>
+
+<div class="modal-overlay" id="export-modal">
+    <div class="modal-box modal-box-wide" role="dialog" aria-modal="true">
+        <div class="modal-title" data-i18n="export_title">导出代理</div>
+        <div class="modal-body" data-i18n="export_hint">导出范围与当前的筛选条件一致。</div>
+        <div class="modal-body export-count" id="export-count"></div>
+        <div class="fmt-grid">
+            <button class="btn fmt-btn" onclick="doExport('txt')">
+                <i class="fa fa-file-text-o"></i>
+                <span class="fmt-name">TXT</span>
+                <span class="fmt-desc" data-i18n="export_fmt_txt">每行一条，最通用</span>
+            </button>
+            <button class="btn fmt-btn" onclick="doExport('json')">
+                <i class="fa fa-code"></i>
+                <span class="fmt-name">JSON</span>
+                <span class="fmt-desc" data-i18n="export_fmt_json">含全部字段</span>
+            </button>
+            <button class="btn fmt-btn" onclick="doExport('csv')">
+                <i class="fa fa-table"></i>
+                <span class="fmt-name">CSV</span>
+                <span class="fmt-desc" data-i18n="export_fmt_csv">表格，可直接进 Excel</span>
+            </button>
+        </div>
+        <div class="modal-actions">
+            <button class="btn" onclick="closeExportModal()"><span data-i18n="modal_cancel">取消</span></button>
+        </div>
+    </div>
+</div>
+
+<div class="modal-overlay" id="plugin-settings-modal">
+    <div class="modal-box modal-box-wide" role="dialog" aria-modal="true">
+        <div class="modal-title" data-i18n="plugin_settings_title">插件验证策略</div>
+        <div class="modal-body" id="plugin-settings-name"></div>
+
+        <div class="fg-check">
+            <input type="checkbox" id="plugin-reval-enabled">
+            <label for="plugin-reval-enabled" data-i18n="plugin_reval_enabled_label">定时重新检查该插件抓来的代理</label>
+        </div>
+        <div class="fg">
+            <label class="fg-label" data-i18n="plugin_reval_interval_label">重验证间隔（分钟）</label>
+            <input class="fg-input" type="number" id="plugin-reval-interval" min="0">
+        </div>
+        <div class="fg-hint" data-i18n="plugin_reval_interval_hint">填 0 表示跟随「池设置」里的全局重验证周期</div>
+
+        <div class="fg-check">
+            <input type="checkbox" id="plugin-skip-validation">
+            <label for="plugin-skip-validation" data-i18n="plugin_skip_validation_label">跳过入库验证，抓到就直接入库</label>
+        </div>
+        <div class="fg-hint" data-i18n="plugin_skip_validation_hint">适合按请求计费、有效性由供应商保证的代理源：不连代理、不发探测请求。这类记录没有出口 IP、匿名度与健康分，建议同时关闭上面的重验证，否则它仍会被定时检测（并产生费用）。</div>
+
+        <div class="modal-actions">
+            <button class="btn" onclick="closePluginSettingsModal()"><span data-i18n="modal_cancel">取消</span></button>
+            <button class="btn pri" id="btn-plugin-settings-save" onclick="savePluginSettings()"><i class="fa fa-save"></i> <span data-i18n="save_config">保存配置</span></button>
+        </div>
+    </div>
+</div>
+
+<div class="img-lightbox" id="img-lightbox" onclick="closeImgLightbox()">
+    <button class="img-lightbox-close" onclick="closeImgLightbox()" data-i18n-title="drawer_close" title="关闭"><i class="fa fa-times"></i></button>
+    <img id="img-lightbox-img" src="" alt="">
+</div>
+
+<script src="/static/js/jquery.min.js?v={{ asset_version }}"></script>
+<script src="/static/js/i18n.js?v={{ asset_version }}"></script>
+<script src="/static/js/common.js?v={{ asset_version }}"></script>
+<script src="/static/js/tables.js?v={{ asset_version }}"></script>
+<script src="/static/js/app.js?v={{ asset_version }}"></script>
+<script src="/static/js/pool.js?v={{ asset_version }}"></script>
+<script src="/static/js/proxies.js?v={{ asset_version }}"></script>
+<script src="/static/js/palette.js?v={{ asset_version }}"></script>
+
+</body>
+</html>
