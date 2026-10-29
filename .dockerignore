@@ -1,0 +1,29 @@
+# 构建上下文瘦身：运行时产物、本地环境与私有配置一律不进镜像
+.venv/
+venv/
+.git/
+.gitignore
+.scratch/
+.workbuddy/
+.playwright-cli/
+__pycache__/
+**/__pycache__/
+*.pyc
+.pytest_cache/
+
+# 运行时数据与日志（bind mount 挂载宿主目录，不烤进镜像层）
+logs/
+modules/proxypool/data/
+modules/proxypool/logs/
+
+# 含真实凭据的本机配置（Dockerfile 构建时也会 rm 掉 config.ini，双保险）
+config/config.ini
+config/whitelist.txt
+config/blacklist.txt
+config/bypass_whitelist.txt
+config/proxies.txt
+config/ip.txt
+.env
+
+# 测试与文档不影响运行
+tests/

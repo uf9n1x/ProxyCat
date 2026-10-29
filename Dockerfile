@@ -11,8 +11,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY requirements.txt .
 
-RUN pip install --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+# pip 源可由 compose 传入（PIP_INDEX_URL）；pip 自升级用同一源，避免默认源整体不可达时卡死
+ARG PIP_INDEX_URL=https://pypi.org/simple
+RUN pip install --upgrade pip --index-url ${PIP_INDEX_URL} && \
+    pip install --no-cache-dir --index-url ${PIP_INDEX_URL} -r requirements.txt
 
 COPY . .
 

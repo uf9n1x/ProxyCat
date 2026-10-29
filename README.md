@@ -53,6 +53,10 @@ docker compose up -d --build
 | `1080` | 代理监听端口（HTTP 与 SOCKS5 共用） |
 | `5001` | Web 面板端口 |
 
+宿主端口默认即上表；需要换成其他端口时，在同目录 `.env` 里写 `PROXY_PORT=8899`、
+`WEB_PORT=5001`（容器内端口由 `config.ini` 决定，两边要一致）。
+构建慢或失败时可在 `.env` 里设 `PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/` 走国内 pip 源。
+
 `config/`、`logs/`、`modules/proxypool/data/` 三个目录 bind mount 到宿主，数据与配置不随容器销毁。
 容器以非 root 运行，宿主目录属主不是 UID/GID 1000 时，在 `.env` 里设 `PUID` / `PGID`。
 
@@ -83,7 +87,7 @@ curl -x http://用户名:密码@127.0.0.1:1080 https://www.baidu.com -I
 1. **面板对外必须设 token**：`config.ini` 的 `[Server] token` 留空表示不校验，对外使用前务必设置，
    改完约 1 秒内生效；设置后必须带 `?token=` 才能打开面板。
 2. **改了端口要同步映射**：面板允许在线改监听端口与面板端口，`config.ini` 里的实际端口必须与
-   `docker-compose.yml` 的端口映射一致，健康检查按实际端口探活。
+   `.env` 里的 `PROXY_PORT` / `WEB_PORT`（默认 1080 / 5001）一致，健康检查按实际端口探活。
 3. **不要改小容器宽限期**：`stop_grace_period` 已放宽到 60 秒，降到 Docker 默认的 10 秒会在写队列
    排空前被 `SIGKILL`，丢失最后一批验证结果与访问记录。
 

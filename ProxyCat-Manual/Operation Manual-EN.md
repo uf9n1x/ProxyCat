@@ -104,7 +104,7 @@ On shutdown the application drains its write queue, so `stop_grace_period` has b
 
 **4. The container turns unhealthy after changing `web_port`**
 
-The health check reads the **actual** `web_port` from `config.ini` at probe time rather than assuming 5001. So after changing the port you must restart the process and update the port mapping in `docker-compose.yml` to match.
+The health check reads the **actual** `web_port` from `config.ini` at probe time rather than assuming 5001. So after changing the port you must restart the process and update `PROXY_PORT` / `WEB_PORT` in `.env` (defaults 1080 / 5001) to match.
 
 ### Common Docker Commands
 
@@ -123,7 +123,7 @@ docker compose up -d --build
 # For other ports, change the port mapping accordingly and allow them through.
 ```
 
-**Which changes need a container restart**: only entries bound when the service starts, such as `port` / `web_port` — changing `web_port` requires restarting the whole application and updating the port mapping in `docker-compose.yml` to match, while `port` leaves the process alone: restarting the proxy service once from the panel binds the new port. Every other setting, whether saved from the panel or hand-edited in `config.ini`, hot-reloads and needs **no** container restart (for the full hot-reload boundaries see [Entry Points](#entry-points)).
+**Which changes need a container restart**: only entries bound when the service starts, such as `port` / `web_port` — changing `web_port` requires restarting the whole application and updating `PROXY_PORT` / `WEB_PORT` in `.env` to match, while `port` leaves the process alone: restarting the proxy service once from the panel binds the new port. Every other setting, whether saved from the panel or hand-edited in `config.ini`, hot-reloads and needs **no** container restart (for the full hot-reload boundaries see [Entry Points](#entry-points)).
 
 ## Entry Points
 

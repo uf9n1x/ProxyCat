@@ -54,6 +54,11 @@ docker compose up -d --build
 | `1080` | Proxy listening port (shared by HTTP and SOCKS5) |
 | `5001` | Web panel port |
 
+The host ports default to the table above; to change them, write `PROXY_PORT=8899` / `WEB_PORT=5001`
+into a `.env` file next to the compose file (the container-side port comes from `config.ini`, so keep
+both sides consistent). If the build is slow or fails, set `PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/`
+in `.env` to use a regional PyPI mirror.
+
 `config/`, `logs/` and `modules/proxypool/data/` are bind-mounted to the host, so data and configuration survive
 container replacement. The container runs as non-root; if the host directories are not owned by UID/GID 1000,
 set `PUID` / `PGID` in `.env`.
@@ -86,8 +91,8 @@ curl -x http://username:password@127.0.0.1:1080 https://www.baidu.com -I
 1. **Set a token before exposing the panel**: an empty `[Server] token` in `config.ini` means no authentication.
    Set it before any external use; it takes effect within about a second, and the panel then requires `?token=`.
 2. **Keep port mappings in sync**: the panel allows changing the listening and panel ports online; the actual
-   ports in `config.ini` must match the mappings in `docker-compose.yml`, and the health check probes the
-   configured port.
+   ports in `config.ini` must match `PROXY_PORT` / `WEB_PORT` in `.env` (defaults 1080 / 5001), and the health
+   check probes the configured port.
 3. **Do not shorten the container grace period**: `stop_grace_period` is relaxed to 60 seconds; the Docker
    default of 10 seconds would `SIGKILL` the app before the write queues drain, losing the last batch of
    validation results and access records.

@@ -104,7 +104,7 @@ PGID=你的GID
 
 **4. 改了 `web_port` 之后容器变成 unhealthy**
 
-健康检查是**按 `config.ini` 里实际的 `web_port` 现读现探**的，不是写死的 5001。所以改完端口必须重启进程，并同步 `docker-compose.yml` 里的端口映射。
+健康检查是**按 `config.ini` 里实际的 `web_port` 现读现探**的，不是写死的 5001。所以改完端口必须重启进程，并同步 `.env` 里的 `PROXY_PORT` / `WEB_PORT`（默认 1080 / 5001）。
 
 ### Docker 常用命令
 
@@ -119,8 +119,8 @@ docker compose logs -f proxycat
 # 修改了 Dockerfile 或依赖后重新构建并启动
 docker compose up -d --build
 
-# docker 端口默认为 1080 和 5001，1080 为监听端口，5001 为 Web 面板
-# 如需其他端口请对应修改端口映射并放行
+# docker 宿主端口默认为 1080 和 5001，1080 为监听端口，5001 为 Web 面板
+# 如需其他端口：在 .env 里设 PROXY_PORT / WEB_PORT，并同步 config.ini 的实际端口
 ```
 
 **哪些改动需要重启容器**：只有 `port` / `web_port` 这类在服务启动时绑定的项需要重启 —— `web_port` 改了必须重启整个应用并同步 `docker-compose.yml` 里的端口映射；`port` 可以不动进程，在面板里重启一次代理服务即可按新端口生效。其余配置项无论是在面板里保存还是手工编辑 `config.ini`，都会由热重载生效，**不需要**重启容器（热加载的完整边界见[运行方式](#运行方式)）。
