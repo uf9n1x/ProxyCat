@@ -63,6 +63,12 @@ in `.env` to use a regional PyPI mirror.
 container replacement. The container runs as non-root; if the host directories are not owned by UID/GID 1000,
 set `PUID` / `PGID` in `.env`.
 
+> **To use the client IP whitelist / blacklist, prefer host networking**: the default bridge port mapping makes
+> every client appear as the Docker gateway address (e.g. `172.19.0.1`), so the lists cannot tell clients apart.
+> Fix: create a `docker-compose.override.yml` next to the compose file with
+> `services: { proxycat: { network_mode: host, ports: !reset [] } }` and recreate with `docker compose up -d` —
+> the container then binds the host ports directly per `config.ini`, and real client IPs pass through.
+
 ### Run from source
 
 Requires **Python 3.10 or later** (3.9 and earlier fail at import time with a `TypeError`):

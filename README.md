@@ -60,6 +60,12 @@ docker compose up -d --build
 `config/`、`logs/`、`modules/proxypool/data/` 三个目录 bind mount 到宿主，数据与配置不随容器销毁。
 容器以非 root 运行，宿主目录属主不是 UID/GID 1000 时，在 `.env` 里设 `PUID` / `PGID`。
 
+> **要用客户端 IP 黑白名单，建议 host 网络**：默认的 bridge 端口映射会把所有客户端的来源 IP 都变成
+> Docker 网关地址（如 `172.19.0.1`），黑白名单无从判断。做法：在 compose 同目录建
+> `docker-compose.override.yml`，内容为
+> `services: { proxycat: { network_mode: host, ports: !reset [] } }`，`docker compose up -d` 重建即可 ——
+> 容器按 `config.ini` 直接绑定宿主端口，客户端真实 IP 透传。
+
 ### 源码运行
 
 需要 **Python 3.10 及以上**（3.9 及更早会在导入阶段报 `TypeError`）：
