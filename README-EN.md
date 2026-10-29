@@ -9,172 +9,103 @@
   <a href="/README-EN.md">English</a>
 </p>
 
-## Table of Contents
-
-- [Project Background](#project-background)
-- [Key Features](#key-features)
-- [Screenshots](#screenshots)
-- [Quick Deployment](#quick-deployment)
-- [Documentation](#documentation)
-- [Disclaimer](#disclaimer)
-- [License](#license)
-- [Development Plan](#development-plan)
-- [Special Thanks](#special-thanks)
-- [Sponsor](#sponsor)
-- [Proxy Recommendations](#proxy-recommendations)
-
-## Project Background
-
-During penetration testing you often need to hide or change your IP address to get past security devices. But tunnel proxies on the market are expensive — typically ¥3-6 per day — which puts them out of reach for many. The author noticed instead that short-lived IPs offer outstanding value: a few cents each, averaging ¥0.03-0.4 per day.
-
-And so **ProxyCat** was born! The tool turns short-lived IPs (valid for 1-60 minutes) into fixed IPs that other tools can use, giving you a proxy pool server that is deployed once and then works indefinitely.
+ProxyCat turns short-lived proxies (valid for 1-60 minutes) into a stable local proxy endpoint: deploy it once,
+and your downstream tools all go through a single local HTTP / SOCKS5 listening port while outbound exits are
+fetched, validated, rotated and retired automatically by the built-in proxy pool — no manual upkeep required.
 
 ![Project Principle](./assets/项目原理图.png)
 
 ## Key Features
 
-- **Dual-protocol listening**: a single port accepts both HTTP and SOCKS5 inbound requests; upstreams may be authenticated HTTP / HTTPS / SOCKS5 proxies. [Details](ProxyCat-Manual/Features-EN.md#outbound-proxy-service)
+- **Dual-protocol listening**: a single port accepts both HTTP and SOCKS5 inbound requests; upstreams may be authenticated HTTP / HTTPS / SOCKS5 proxies.
 - **Three proxy sources**: `local` reads a local list, `api` fetches from an endpoint live, `pool` uses the built-in proxy pool directly — switching between them on the panel takes effect immediately.
-- **Many exits serving at once**: several upstream exits are kept in service simultaneously, and requests are spread by each exit's live load — so when an upstream rate-limits per exit IP, concurrency scales with the number of exits. [Upstream Exits and Concurrency](ProxyCat-Manual/Features-EN.md#upstream-exits-and-concurrency)
+- **Many exits serving at once**: several upstream exits are kept in service simultaneously, and requests are spread by each exit's live load — so when an upstream rate-limits per exit IP, concurrency scales with the number of exits.
 - **Retirement by failure share**: an exit's health is judged by the failure share in its sliding window, not by a count of consecutive failures — which is what tells "one network hiccup" apart from "this exit is simply broken".
-- **Automatic expansion at peak**: exits are added automatically when load climbs, and released in one step once the peak passes; growth and release look at two different numbers, so the exit count never oscillates.
-- **Built-in proxy pool**: plugin-based collection, verify-before-storing, three validation intensities, health scoring, offline geolocation, automatic revalidation and cleanup. [Built-in Proxy Pool](ProxyCat-Manual/Features-EN.md#built-in-proxy-pool)
+- **Automatic expansion at peak**: exits are added automatically when load climbs, and released once the peak passes, so the exit count never oscillates.
+- **Built-in proxy pool**: plugin-based collection, verify-before-storing, health scoring, offline geolocation, automatic revalidation and cleanup.
 - **Real usage feedback**: bad exits found while forwarding flow back into the pool; once consecutive failures reach the threshold the entry is marked invalid, and a passing revalidation restores it automatically.
-- **Access control and outbound authentication**: client IP whitelist / blacklist judged by priority, a bypass list that connects matching targets directly, and username / password authentication on the outbound side.
-- **Web management panel**: four tabs — Proxy Config, Proxy Pool, Access Control and Logs — putting configuration, lists, logs and service start/stop on one screen. [Panel and Operations](ProxyCat-Manual/Features-EN.md#panel-and-operations)
-- **Containerized deployment**: one-command Docker build and start; the container runs as non-root, and the health check probes the actual panel port.
+- **Access control**: username / password authentication on the outbound side, client IP whitelist / blacklist judged by priority, and a bypass list that connects matching targets directly.
+- **Web management panel**: four tabs — Proxy Config, Proxy Pool, Access Control and Logs — putting configuration, lists, logs and service start/stop on one screen.
 
 ## Screenshots
 
-The panel is a single page with four tabs down the left side: Proxy Config, Proxy Pool, Access Control and Logs.
+The panel is a single-page app with four tabs down the left side; the theme follows the system preference.
 
-| Proxy Config · Source | Proxy Pool · Proxy Management |
+| Proxy Config | Proxy Pool |
 |---|---|
-| ![Proxy Config · Source](./assets/screenshots/config-source-en.png) | ![Proxy Pool · Proxy Management](./assets/screenshots/pool-manage-en.png) |
-| Pick the proxy source (Local / API / Pool) and fill in whatever the current source needs — here, the remote pool URL for the built-in pool (leave it empty to use the in-process pool). | Every collected proxy at a glance: protocol, real IP, region, delay, health score and anonymity. |
+| ![Proxy Config](./assets/screenshots/config-source.png) | ![Proxy Pool](./assets/screenshots/pool-manage.png) |
+| Sources (local / API / pool), listening port, exits and concurrency, checks and logging. | Fetch plugins and every collected proxy: protocol, real IP, region, delay, health score and anonymity. |
 
 | Access Control | Logs |
 |---|---|
-| ![Access Control](./assets/screenshots/access-en.png) | ![Logs](./assets/screenshots/logs-en.png) |
-| Outbound authentication accounts, the IP whitelist / blacklist and the proxy bypass list all live here. | Live logs and past log files, plus access statistics and per-request detail. |
-
-| Dark Theme · Exit Rotation | Dark Theme · Proxy Management |
-|---|---|
-| ![Dark Theme · Exit Rotation](./assets/screenshots/config-exits-dark.png) | ![Dark Theme · Proxy Management](./assets/screenshots/pool-manage-dark.png) |
-| The dark theme: the layout is identical to the light one. | The same Proxy Management view in dark mode, sharing data and server-side settings with the light one. |
-
-The panel offers two themes, dark and light; until you switch manually it follows the system's dark preference. The interface also switches between Chinese and English — the language is a server-side setting, so one flip updates the whole site's copy and the headers of exported files together.
+| ![Access Control](./assets/screenshots/access.png) | ![Logs](./assets/screenshots/logs.png) |
+| Outbound authentication accounts, the IP whitelist / blacklist and the proxy bypass list. | Live logs and past log files, plus access statistics and per-request detail. |
 
 ## Quick Deployment
 
-### Docker (Recommended)
+### Docker
 
 ```bash
 docker compose up -d --build
 ```
-
-Compose builds the image and starts the container. Two ports are exposed:
 
 | Port | Purpose |
 |---|---|
 | `1080` | Proxy listening port (shared by HTTP and SOCKS5) |
 | `5001` | Web panel port |
 
-Three directories are bind-mounted to the host so your data and configuration survive container recreation: `config/`, `logs/` and `modules/proxypool/data/`.
+`config/`, `logs/` and `modules/proxypool/data/` are bind-mounted to the host, so data and configuration survive
+container replacement. The container runs as non-root; if the host directories are not owned by UID/GID 1000,
+set `PUID` / `PGID` in `.env`.
 
-### Running from Source
+### Run from source
 
-**Python 3.10 or later is required**: the source makes heavy use of runtime-evaluated `X | Y` union type annotations, and 3.9 or earlier raises a `TypeError` at import time.
+Requires **Python 3.10 or later** (3.9 and earlier fail at import time with a `TypeError`):
 
 ```bash
 pip install -r requirements.txt
-
-# On Windows the command is `python`
-python3 app.py
+cp config/config.example.ini config/config.ini   # edit as needed
+python3 app.py                                    # on Windows the command is python
 ```
 
-`app.py` brings up the web panel and the outbound proxy service together. The `config/config.ini` shipped in this repo sets `proxy_source_mode=pool` (the program's built-in default is `local`), so starting from this configuration **starts the built-in proxy pool automatically along with the service** — exits are available right out of the box.
+`app.py` starts both the web panel and the outbound proxy service.
 
-### Verifying the Deployment
-
-Two commands confirm the service is really working:
+### Verify the deployment
 
 ```bash
 # 1. The panel is listening: expect 302 (redirect to /web)
 curl -i http://127.0.0.1:5001/
 
-# 2. The proxy is forwarding: expect 200, with the request actually going through an upstream.
-#    The [Users] section of the shipped config has accounts, so requests must be authenticated;
-#    without credentials you get a 407.
-curl -x http://demo:demo123@127.0.0.1:1080 https://www.baidu.com -I
+# 2. The proxy is forwarding: after adding an account under [Users] in config.ini,
+#    expect 200 with the request actually leaving through an upstream proxy
+curl -x http://username:password@127.0.0.1:1080 https://www.baidu.com -I
 ```
 
-### Must-Read for Your First Deployment
+### Three things to know
 
-These four are all classic "symptom first, cause later" cases; the full explanations are in the operation manual's [Four Things To Know Before Deploying](ProxyCat-Manual/Operation%20Manual-EN.md#four-things-to-know-before-deploying):
-
-1. **The panel won't open, and returns 401**: with a token set you **must pass `?token=` to open it**; the token shipped in this repo is public, so change `[Server] token` in `config.ini` before exposing the panel — the change takes effect within about a second, and the old token stops working immediately.
-2. **The container is up but can't write configuration or logs**: the container runs as a non-root user, so its UID/GID must match the owner of `config/`, `logs/` and `modules/proxypool/data/` on the host; if they differ, set `PUID` / `PGID` in `.env`.
-3. **A restart loses the last batch of data**: on shutdown the application drains its write queue, and `stop_grace_period` has been raised to 60 seconds — Docker's 10-second default `SIGKILL`s it before the drain finishes, **so please don't lower it**.
-4. **The container turns unhealthy after changing `web_port`**: the health check reads the actual `web_port` from `config.ini` at probe time, so after changing it you must restart the process and update the port mapping in `docker-compose.yml`.
-
-### Network Behaviour
-
-Besides forwarding client traffic, ProxyCat itself also makes outbound requests, many of them **direct** (sent from this machine's real IP) — for example the version check, the pool's host public-IP lookup, the GeoNode and GitHub scraping plugins and the offline geolocation-database update. These requests can all be turned off or pointed at addresses of your own (pointing `version_check_url` at an address of your own keeps the version check away from the built-in third-party mirror); for each one's trigger, destination and how to stop it, see [Features](ProxyCat-Manual/Features-EN.md#outbound-network-requests). Traffic forwarded through a proxy is not on this list — that is the client's own traffic.
+1. **Set a token before exposing the panel**: an empty `[Server] token` in `config.ini` means no authentication.
+   Set it before any external use; it takes effect within about a second, and the panel then requires `?token=`.
+2. **Keep port mappings in sync**: the panel allows changing the listening and panel ports online; the actual
+   ports in `config.ini` must match the mappings in `docker-compose.yml`, and the health check probes the
+   configured port.
+3. **Do not shorten the container grace period**: `stop_grace_period` is relaxed to 60 seconds; the Docker
+   default of 10 seconds would `SIGKILL` the app before the write queues drain, losing the last batch of
+   validation results and access records.
 
 ## Documentation
 
-The README keeps only the basic introduction and quick deployment; everything else lives in the documents below:
-
 | Document | Contents |
 |---|---|
-| [Features](ProxyCat-Manual/Features-EN.md) | Outbound proxy service, built-in proxy pool, panel and operations, upstream exits and concurrency, outbound network requests, performance benchmarks and project structure |
-| [Configuration](ProxyCat-Manual/Configuration-EN.md) | Every option in `[Server]` / `[Users]` / `[api_credentials]` / `[Pool]`: defaults, descriptions and how changes take effect |
-| [Operation Manual](ProxyCat-Manual/Operation%20Manual-EN.md) | Installation and deployment, entry points, a page-by-page tour of the panel, using the proxy pool, logs and access records, troubleshooting Q&A |
-| [Investigation Manual](ProxyCat-Manual/Investigation%20Manual-EN.md) | How to diagnose and handle common errors |
-| [Changelog](ProxyCat-Manual/logs-EN.md) | What changed in every release |
-| [API Reference](API-EN.md) | Parameters, response examples and error codes for the panel's `/api/*` and the pool's `/api/pool/*` |
-| [Proxy Pool Module Docs](modules/proxypool/README-EN.md) | Implementation details: scrape plugin development, validation strategy, anonymity detection, geolocation resolution, automatic cleanup |
-
-The Chinese documents are the same files without the `-EN` suffix (e.g. `ProxyCat-Manual/Features.md`); the Chinese entry point is [README.md](README.md).
-
-## Disclaimer
-
-- By downloading, installing, using, or modifying this tool and related code, you indicate your trust in this tool.
-- We are not responsible for any form of loss or damage caused to yourself or others while using this tool.
-- You are solely responsible for any illegal activities conducted while using this tool.
-- Please carefully read and fully understand all terms, especially liability exemption clauses.
-- You have no right to download, install, or use this tool unless you have read and accepted all terms.
-- Your download, installation, and usage actions indicate your acceptance of this agreement.
+| [Features](ProxyCat-Manual/Features-EN.md) | Outbound proxy service, built-in proxy pool, panel and operations, upstream exits and concurrency, outbound network requests, benchmarks and project structure |
+| [Configuration](ProxyCat-Manual/Configuration-EN.md) | Every `[Server]` / `[Users]` / `[api_credentials]` / `[Pool]` option: defaults, meaning and how changes take effect |
+| [Operation Manual](ProxyCat-Manual/Operation%20Manual-EN.md) | Installation, running modes, panel walkthrough, pool usage, logs and access records, FAQ |
+| [Investigation Manual](ProxyCat-Manual/Investigation%20Manual-EN.md) | Diagnosing and handling common errors |
+| [Changelog](ProxyCat-Manual/logs-EN.md) | Changes in each version |
+| [API Reference](API-EN.md) | Panel `/api/*` and pool `/api/pool/*` parameters, response examples and error codes |
+| [Proxy Pool Module](modules/proxypool/README-EN.md) | Fetch plugin development, validation strategy, anonymity detection, geolocation, automatic cleanup and other internals |
 
 ## License
 
-This project is licensed under the **GNU General Public License v2.0 (GPL-2.0)**; the full text is in
-[LICENSE](LICENSE).
-
-- It is a **copyleft license**: if you distribute a modified version or a derivative work, it must also
-  be licensed under GPL-2.0 with source available.
-- The software comes with **no warranty** — which is also why the disclaimer above reads the way it does.
-
-## Development Plan
-
-- [x] Add detailed logging to record all IP identities connecting to ProxyCat, supporting multiple users.
-- [x] Add Web UI for a more powerful and user-friendly interface.
-- [x] Built-in proxy pool: plugin-based collection, validation, scoring, geolocation and automatic cleanup.
-- [ ] Develop babycat module that can run on any server or host to turn it into a proxy server.
-- [ ] Add request blacklist/whitelist to specify URLs, IPs, or domains to be forcibly dropped or bypassed (the bypass list is already supported; the rest is pending).
-- [ ] Package to PyPi for easier installation and use.
-
-## Special Thanks
-
-In no particular order, thanks to all contributors who helped with this project:
-
-- [AabyssZG (曾哥)](https://github.com/AabyssZG)
-- [ProbiusOfficial (探姬)](https://github.com/ProbiusOfficial)
-- [gh0stkey (EvilChen)](https://github.com/gh0stkey)
-- [huangzheng2016(HydrogenE7)](https://github.com/huangzheng2016)
-- chars6
-- qianzai（千载）
-- ziwindlu
-- lalala-orz(啦啦啦)
-
+This project is licensed under the **GNU General Public License v2.0 (GPL-2.0)**; see [LICENSE](LICENSE) for the
+full text. Distributing modified versions or derivative works requires licensing them under GPL-2.0 with source
+provided. This software comes with no warranty.
