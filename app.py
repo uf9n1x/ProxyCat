@@ -39,6 +39,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(BASE_DIR)
 
 from modules.modules import load_config, check_proxies, get_message, load_ip_list, load_bypass_whitelist, CURRENT_VERSION, port_in_use, strip_deprecated_server_keys, migrate_pool_proxy_count, migrate_getip_url, update_ini_keys, write_ini_section, read_config_text, write_text_atomic, ini_parser, enable_safe_console_output
+from modules import self_update
 from modules.logging_setup import (
     ALL_CATEGORIES, apply_log_level, clear_log_ring, current_log_filenames,
     flush_log_queue, iter_log_files, log_file_path, log_ring_stats, query_log_ring,
@@ -1198,6 +1199,38 @@ def check_version():
 @require_token
 def check_version_now():
     return jsonify(version_checker.check_now())
+
+@app.route('/api/update/latest')
+@require_token
+def update_latest():
+    """查询 GitHub Release 最新版本与本地差异；前端据此决定是否显示「一键更新」。"""
+    release = self_update.latest_release()
+    if not release:
+        return jsonify({'status': 'error', 'message': 'release lookup failed'})
+    has, release = self_update.has_update(release)
+    return jsonify({
+        'status': 'success',
+        'has_update': has,
+        'current_version': CURRENT_VERSION,
+        'latest_version': release.get('tag'),
+        'release_url': release.get('html_url'),
+        'notes': release.get('notes'),
+        'published_at': release.get('published_at'),
+    })
+
+@app.route('/api/update/apply', methods=['POST'])
+@require_token
+def update_apply():
+    """启动后台自更新（下载→覆盖→重启）；非阻塞，进度用 /api/update/status 轮询。"""
+    if not self_update.start_update():
+        return jsonify({'status': 'error', 'message': 'update already in progress'})
+    return jsonify({'status': 'success'})
+
+@app.route('/api/update/status')
+@require_token
+def update_status():
+    return jsonify({'status': 'success', **self_update.state()})
+
 
 @app.route('/api/users', methods=['GET', 'POST'])
 @require_token

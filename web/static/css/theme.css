@@ -299,6 +299,27 @@ h1, h2, h3, h4 { color: var(--text); letter-spacing: -.015em; }
 .ver-ok { color: var(--success-text); }
 .ver-new { color: var(--warn-text); }
 .ver-err { color: var(--danger-text); }
+/* 一键更新小按钮：嵌在侧栏品牌区，紧凑描边式，hover 提为实体 */
+.ver-update-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 18px;
+  padding: 0 7px;
+  margin-left: 6px;
+  border: 1px solid var(--warn);
+  border-radius: var(--r-xs);
+  background: transparent;
+  color: var(--warn-text);
+  font-family: var(--font-sans);
+  font-size: 10px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--fast) var(--ease), color var(--fast) var(--ease);
+}
+.ver-update-btn:hover { background: var(--warn); color: #FFF; }
+.ver-update-btn .fa { font-size: 9px; }
 
 /* 导航：条目 34px，选中态 = 左侧 2px 青条 + 微亮底 + 白字。
    不用圆角药丸，那会让侧栏变成"应用抽屉"。 */

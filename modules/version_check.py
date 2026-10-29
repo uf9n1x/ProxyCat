@@ -45,6 +45,7 @@ from packaging.version import InvalidVersion, Version
 from modules.loop_noise_filter import install_loop_noise_filter
 from modules.modules import (
     CURRENT_VERSION,
+    PROJECT_REPO_URL,
     get_message,
     read_config_text,
     write_text_atomic,
@@ -52,7 +53,21 @@ from modules.modules import (
 
 logger = logging.getLogger(__name__)
 
-BUILTIN_SOURCES = ()   # 本项目为独立衍生的版本线，不再对任何上游发布页做更新检查
+
+def _builtin_sources() -> tuple:
+    """从 PROJECT_REPO_URL 推导检查源：releases.atom（轻）与 GitHub API（带资产信息）。
+    仓库未配置（还是占位符）时返回空元组，检查静默跳过。"""
+    m = re.match(r'^https://github\.com/([^/]+)/([^/]+)/?$', PROJECT_REPO_URL.strip().rstrip('/'))
+    if not m or m.group(1).lower() == 'placeholder':
+        return ()
+    owner, repo = m.group(1), m.group(2)
+    return (
+        f"https://github.com/{owner}/{repo}/releases.atom",
+        f"https://api.github.com/repos/{owner}/{repo}/releases?per_page=10",
+    )
+
+
+BUILTIN_SOURCES = _builtin_sources()
 
 CHECK_INTERVAL_SECONDS = 24 * 60 * 60
 
@@ -316,12 +331,12 @@ class VersionChecker:
 
     def _sources(self) -> tuple:
         if self._url_provider is None:
-            return BUILTIN_SOURCES
+            return _builtin_sources()
         try:
             custom = str(self._url_provider() or '').strip()
         except Exception:
-            return BUILTIN_SOURCES
-        return (custom,) if custom else BUILTIN_SOURCES
+            return _builtin_sources()
+        return (custom,) if custom else _builtin_sources()
 
     def _fetch_latest(self) -> tuple:
         sources = self._sources()

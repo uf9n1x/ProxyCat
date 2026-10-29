@@ -2237,14 +2237,13 @@ function clearDomainStats() {
 }
 
 
-var VER_RELEASES_URL = '';   // 本项目没有对外发布页：发现新版本时不渲染外链
+var VER_RELEASES_URL = '';   // 由 /api/update/latest 动态提供发布页链接
 
 function _renderVer(d) {
   var stat = d.is_latest
     ? '<span class="ver-ok"> ' + T().latest_version + '</span>'
-    : '<span class="ver-new">' + T().new_version_available + (VER_RELEASES_URL
-        ? ': <a href="' + VER_RELEASES_URL + '" target="_blank" rel="noopener">' + escapeHtml(d.latest_version || '') + '</a>'
-        : ': ' + escapeHtml(d.latest_version || '')) + '</span>';
+    : '<span class="ver-new">' + T().new_version_available + ': ' + escapeHtml(d.latest_version || '') + '</span>' +
+      '<button type="button" class="ver-update-btn" onclick="startUpdateFlow()"><i class="fa fa-cloud-download-alt"></i> ' + T().update_now + '</button>';
   $('#hdr-ver').text(d.current_version || 'ProxyCat');
   $('#ver-stat').removeAttr('title').html(stat);
 }
@@ -2284,6 +2283,118 @@ function showVerError(message) {
 }
 
 $(document).on('click', '#ver-refresh', refreshVer);
+
+/* ── 一键自更新 ──────────────────────────────────────────────────
+   流程：查 Release → 确认弹窗 → 后台下载覆盖（进度轮询）→ 服务重启 →
+   轮询面板回来 → 提示并刷新页面。config/logs/data 目录永不被覆盖。 */
+
+var _updatePolling = false;
+
+function startUpdateFlow() {
+  if (_updatePolling) return;
+  $.get(appendToken('/api/update/latest'), function (d) {
+    if (!d || d.status !== 'success') {
+      toast(T().update_check_failed, 'error');
+      return;
+    }
+    if (!d.has_update) {
+      toast(T().latest_version, 'info');
+      return;
+    }
+    showModal({
+      icon: 'info', iconClass: 'fa-cloud-download-alt',
+      title: T().update_modal_title,
+      body: T().update_confirm_body
+        .replace('{cur}', escapeHtml(d.current_version || ''))
+        .replace('{new}', escapeHtml(d.latest_version || '')),
+      okText: T().update_now,
+      callback: function (ok) { if (ok) _applyUpdate(); }
+    });
+  }).fail(function () { toast(T().update_check_failed, 'error'); });
+}
+
+function _applyUpdate() {
+  _updatePolling = true;
+  showModal({
+    icon: 'info', iconClass: 'fa-sync fa-spin',
+    title: T().update_running_title,
+    body: T().update_downloading,
+    showCancel: false, okText: T().update_please_wait
+  });
+  $.post(appendToken('/api/update/apply'))
+    .done(function (d) {
+      if (d.status !== 'success') {
+        _updatePolling = false;
+        toast(d.message || T().update_failed, 'error');
+        closeModal('modal-overlay');
+        return;
+      }
+      _pollUpdateStatus();
+    })
+    .fail(function () {
+      _updatePolling = false;
+      toast(T().update_failed, 'error');
+      closeModal('modal-overlay');
+    });
+}
+
+function _pollUpdateStatus() {
+  $.get(appendToken('/api/update/status'), function (d) {
+    var ph = d && d.phase;
+    if (ph === 'error') {
+      _updatePolling = false;
+      $('#modal-body').text(d.message || T().update_failed);
+      $('#modal-icon i').attr('class', 'fa fa-times-circle');
+      $('#modal-ok').find('span').text(T().modal_confirm);
+      $('#modal-ok').off('click').on('click', function () { closeModal('modal-overlay'); });
+      $('#modal-cancel').show().off('click').on('click', function () { closeModal('modal-overlay'); });
+      toast(T().update_failed, 'error');
+      return;
+    }
+    if (ph === 'downloading') {
+      $('#modal-body').text(d.message || T().update_downloading);
+      setTimeout(_pollUpdateStatus, 1200);
+      return;
+    }
+    if (ph === 'extracting') {
+      $('#modal-body').text(d.message || T().update_extracting);
+      setTimeout(_pollUpdateStatus, 1200);
+      return;
+    }
+    if (ph === 'restarting') {
+      $('#modal-body').text(T().update_restarting);
+      _waitPanelBack(0);
+      return;
+    }
+    /* idle：状态被重置（极端情况：状态丢失），当作完成处理 */
+    if (ph === 'idle' || ph === 'done') { _waitPanelBack(0); return; }
+    setTimeout(_pollUpdateStatus, 1200);
+  }).fail(function () { setTimeout(_pollUpdateStatus, 2000); });
+}
+
+function _waitPanelBack(tries) {
+  if (tries > 90) {
+    _updatePolling = false;
+    toast(T().update_failed, 'error');
+    closeModal('modal-overlay');
+    return;
+  }
+  $.get(appendToken('/api/version'), function (d) {
+    if (d && d.status === 'success') {
+      _updatePolling = false;
+      $('#modal-body').text(T().update_done);
+      $('#modal-icon i').attr('class', 'fa fa-check-circle');
+      toast(T().update_done, 'ok');
+      setTimeout(function () { location.reload(); }, 1500);
+      return;
+    }
+    _waitPanelBackRetry(tries);
+  }).fail(function () { _waitPanelBackRetry(tries); });
+}
+
+function _waitPanelBackRetry(tries) {
+  setTimeout(function () { _waitPanelBack(tries + 1); }, 2000);
+}
 
 
 function scrollToTop() {
